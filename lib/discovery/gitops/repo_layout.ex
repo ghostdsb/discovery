@@ -36,11 +36,14 @@ defmodule Discovery.GitOps.RepoLayout do
   Gets the namespace for an app and environment.
   """
   @spec get_namespace(String.t(), String.t()) :: String.t()
-  def get_namespace(app_name, environment \\ "production") do
-    case environment do
-      "production" -> app_name
-      env -> "#{app_name}-#{env}"
-    end
+  def get_namespace(_app_name, _environment \\ "production") do
+    # Keeping namespace discovery for all deployments done
+    # via discovery
+    "dicovery"
+    # case environment do
+    #   "production" -> app_name
+    #   env -> "#{app_name}-#{env}"
+    # end
   end
 
   @doc """
