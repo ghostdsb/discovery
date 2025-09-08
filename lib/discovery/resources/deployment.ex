@@ -47,9 +47,16 @@ defmodule Discovery.Resources.Deployment do
   defp update_container(map, app) do
     [deployment_container | _] = get_in(map, ["spec", "template", "spec", "containers"])
 
+    # Build envFrom with one ConfigMapRef and 0..N SecretRefs
+    env_from =
+      [%{"configMapRef" => %{"name" => "#{app.app_name}-#{app.uid}"}}] ++
+        Enum.map(Map.get(app, :secret_refs, []), fn secret_name ->
+          %{"secretRef" => %{"name" => secret_name}}
+        end)
+
     deployment_container =
       deployment_container
-      |> put_in(["envFrom"], [%{"configMapRef" => %{"name" => "#{app.app_name}-#{app.uid}"}}])
+      |> put_in(["envFrom"], env_from)
       |> put_in(["image"], "#{app.app_image}")
       |> put_in(["name"], "#{app.app_name}")
       |> put_in(["ports"], [

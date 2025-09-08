@@ -374,7 +374,8 @@ defmodule Discovery.GitOps.GitOpsManager do
       uid: uid,
       # Will be populated from config_ref
       config_map: %{},
-      app_host: "#{app_name}.example.com",
+      app_host: config_ref["app_host"] || "#{app_name}.example.com",
+      secret_refs: Map.get(config_ref, "secret_refs", []),
       app_target_port: 80,
       app_container_port: 4000
     }
@@ -392,6 +393,7 @@ defmodule Discovery.GitOps.GitOpsManager do
          :ok <- write_deployment_using_resource(app_dir, app_with_config, state),
          :ok <- write_service_using_resource(app_dir, app_with_config, state),
          :ok <- upsert_ingress_using_resource(environment, app_name, deployment_name, state),
+         :ok <- apply_manifests_to_k8s(app_dir, state),
          {:ok, commit_result} <-
            commit_and_push_changes(
              app_name,
@@ -401,7 +403,7 @@ defmodule Discovery.GitOps.GitOpsManager do
              "feat(ci): deploy #{deployment_name} to #{environment}"
            ) do
       # Immediately record latest endpoint for clients querying Discovery
-      write_latest_endpoint_to_metadata_db(app_name, deployment_name)
+      write_latest_endpoint_to_metadata_db(app_name, deployment_name, app_with_config.app_host)
 
       {:ok,
        %{
@@ -417,7 +419,7 @@ defmodule Discovery.GitOps.GitOpsManager do
            service:
              relative_from_root(state.local_path, Path.join(app_dir, state.file_names.service))
          },
-         endpoint: computed_endpoint(app_name, deployment_name),
+         endpoint: computed_endpoint(app_with_config.app_host, deployment_name),
          commit: commit_result
        }}
     else
@@ -425,15 +427,65 @@ defmodule Discovery.GitOps.GitOpsManager do
     end
   end
 
-  defp computed_endpoint(app_name, deployment_name) do
-    # Keep consistent with ingress host/path used in upsert_ingress_using_resource/4
-    host = "#{app_name}.example.com"
-    "https://#{host}/#{deployment_name}"
+  defp computed_endpoint(app_host, deployment_name) do
+    # Use the actual app_host from CI pipeline instead of hardcoded pattern
+    "https://#{app_host}/#{deployment_name}"
   end
 
-  defp write_latest_endpoint_to_metadata_db(app_name, deployment_name) do
+  defp apply_manifests_to_k8s(app_dir, state) do
+    # Apply manifests directly to K8s for immediate availability
+    # GitOps will eventually reconcile, but this ensures immediate deployment
+    manifests = [
+      Path.join(app_dir, state.file_names.deployment),
+      Path.join(app_dir, state.file_names.configmap),
+      Path.join(app_dir, state.file_names.service)
+    ]
+
+    # Also apply ingress if it exists
+    env_root = Map.get(state.env_root_map, "production", "production")
+
+    ingress_path =
+      Path.join([
+        state.local_path,
+        env_root,
+        "apps",
+        Path.basename(app_dir),
+        state.file_names.ingress
+      ])
+
+    manifests = if File.exists?(ingress_path), do: manifests ++ [ingress_path], else: manifests
+
+    results = Enum.map(manifests, &apply_single_manifest/1)
+
+    case Enum.find(results, fn result -> match?({:error, _}, result) end) do
+      nil -> :ok
+      {:error, reason} -> {:error, "Failed to apply manifests: #{reason}"}
+    end
+  end
+
+  defp apply_single_manifest(manifest_path) do
+    alias Discovery.Engine.Builder
+
+    with conn when not is_nil(conn) <- Builder.get_conn(),
+         {:ok, resource_map} <- K8s.Resource.from_file(manifest_path),
+         operation <- K8s.Client.create(resource_map),
+         {:ok, _} <- K8s.Client.run(conn, operation) do
+      Logger.info("Successfully applied manifest: #{manifest_path}")
+      :ok
+    else
+      nil ->
+        Logger.error("No K8s connection found")
+        {:error, "No K8s connection"}
+
+      {:error, error} ->
+        Logger.error("Failed to apply manifest #{manifest_path}: #{inspect(error)}")
+        {:error, "Failed to apply #{manifest_path}: #{inspect(error)}"}
+    end
+  end
+
+  defp write_latest_endpoint_to_metadata_db(app_name, deployment_name, app_host) do
     # Mirror structure used by Engine.Builder.update_app_metadata/3
-    endpoint = computed_endpoint(app_name, deployment_name)
+    endpoint = computed_endpoint(app_host, deployment_name)
     now = DateTime.utc_now()
 
     current =
