@@ -46,7 +46,7 @@ RUN MIX_ENV=${MIX_ENV} mix release
 # prepare release image
 FROM alpine:3.15.6 AS app
 
-RUN apk add --no-cache openssl ncurses-libs libgcc libstdc++
+RUN apk add --no-cache openssl ncurses-libs libgcc libstdc++ git npm python3 curl
 
 ARG MIX_ENV
 ENV USER="elixir"
