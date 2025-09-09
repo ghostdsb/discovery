@@ -68,7 +68,7 @@ defmodule Discovery.GitOps.GitOpsManager do
 
   @doc """
   Syncs the entire minikube/discovery folder to the GitOps repository.
-  This copies all files from minikube/discovery to /tmp/discovery-gitops and pushes to Git.
+  This copies all files from minikube/discovery to /tmp/discovery-k8s and pushes to Git.
   """
   @spec sync_from_discovery_to_gitops(String.t()) :: {:ok, map()} | {:error, String.t()}
   def sync_from_discovery_to_gitops(commit_message \\ "Sync Discovery state to GitOps") do
@@ -122,9 +122,9 @@ defmodule Discovery.GitOps.GitOpsManager do
   @impl true
   def init(opts) do
     git_access_token = Application.get_env(:discovery, :git_access_token)
-    repo_url = Keyword.get(opts, :repo_url, "https://github.com/ghostdsb/gitops.git")
+    repo_url = Keyword.get(opts, :repo_url, "https://github.com/gamezop/discovery-k8s.git")
     token = Keyword.get(opts, :token, git_access_token)
-    local_path = Keyword.get(opts, :local_path, "/tmp/discovery-gitops")
+    local_path = Keyword.get(opts, :local_path, "/tmp/discovery-k8s")
     use_pr = Keyword.get(opts, :use_pr, false)
 
     # New layout options

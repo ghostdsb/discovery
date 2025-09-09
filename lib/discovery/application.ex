@@ -29,9 +29,9 @@ defmodule Discovery.Application do
       {DeployManager, []},
       {GitOpsManager,
        [
-         repo_url: "git@github.com:ghostdsb/gitops.git",
+         repo_url: "git@github.com:gamezop/discovery-k8s.git",
          token: git_access_token,
-         local_path: "/tmp/discovery-gitops",
+         local_path: "/tmp/discovery-k8s",
          use_pr: false,
          write_layout: :env_first,
          env_root_map: %{"dev" => "dev", "staging" => "staging", "prod" => "prod"},
