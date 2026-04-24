@@ -23,9 +23,15 @@ defmodule Discovery.Resources.Ingress do
   def add_ingress_path(current_ingress_map, app) do
     new_path = %{
       "path" => "/#{app.uid}(/|$)(.*)",
+      # "pathType" => "ImplementationSpecific",
+      "pathType" => "Prefix",
       "backend" => %{
-        "serviceName" => "#{app.app_name}-#{app.uid}",
-        "servicePort" => 80
+        "service" => %{
+          "name" => "#{app.app_name}-#{app.uid}",
+          "port" => %{
+            "number" => 80
+          }
+        }
       }
     }
 
@@ -101,7 +107,7 @@ defmodule Discovery.Resources.Ingress do
         |> get_in(["http", "paths"])
         |> Enum.map(fn path_details ->
           path_details
-          |> get_in(["backend", "serviceName"])
+          |> get_in(["backend", "service", "name"])
         end)
 
       _ ->

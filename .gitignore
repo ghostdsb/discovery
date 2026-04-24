@@ -37,4 +37,9 @@ npm-debug.log
 
 /minikube/
 
-/.vscode/
+/.vscode
+
+/.env
+
+example_workflow.sh
+test_gitops.exs

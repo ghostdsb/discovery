@@ -1,6 +1,4 @@
-ARG MIX_ENV="develop"
-
-FROM hexpm/elixir:1.12.2-erlang-24.0.5-alpine-3.14.0 as build
+FROM hexpm/elixir:1.14.0-erlang-25.1-alpine-3.15.6 as build
 
 # install build dependencies
 RUN apk add --no-cache build-base git npm python3 curl
@@ -13,15 +11,17 @@ WORKDIR /app
 RUN mix local.hex --force && \
     mix local.rebar --force
 
-
 # set build ENV
 ARG MIX_ENV
 ENV MIX_ENV="${MIX_ENV}"
 
 # install mix dependencies
 COPY mix.exs mix.lock ./
-COPY config config
-RUN mix do deps.get, deps.compile
+RUN --mount=type=secret,id=github_token \
+    GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
+    echo "machine github.com login $GITHUB_TOKEN" > ~/.netrc && \
+    mix deps.get --only ${MIX_ENV}
+RUN mkdir config
 
 # copy compile-time config files before we compile dependencies
 # to ensure any relevant config change will trigger the dependencies
@@ -30,27 +30,23 @@ COPY config/config.exs config/$MIX_ENV.exs config/
 RUN mix deps.compile
 
 COPY priv priv
+# COPY assets assets
 
+# compile and build release
 COPY lib lib
-
-COPY assets assets
-RUN npm install --prefix ./assets
-RUN npm rebuild node-sass
-RUN mix assets.deploy
-
-# uncomment COPY if rel/ exists
 
 RUN mix compile
 # changes to config/runtime.exs don't require recompiling the code
 COPY config/runtime.exs config/
+
 # uncomment COPY if rel/ exists
 # COPY rel rel
-RUN mix release
+RUN MIX_ENV=${MIX_ENV} mix release
 
 # prepare release image
-FROM alpine:3.14.0 AS app
+FROM alpine:3.15.6 AS app
 
-RUN apk add --no-cache openssl ncurses-libs libgcc libstdc++
+RUN apk add --no-cache openssl ncurses-libs libgcc libstdc++ git npm python3 curl
 
 ARG MIX_ENV
 ENV USER="elixir"
@@ -83,7 +79,13 @@ USER root:root
 
 COPY --from=build --chown=root:root /app/_build/"${MIX_ENV}"/rel/discovery ./
 
-COPY entrypoint.sh .
+COPY ./dockerfiles/entrypoint.sh .
+
+ARG MIX_ENV
+ENV MIX_ENV="${MIX_ENV}"
+
+# ARG POD_A_RECORD
+# ENV POD_A_RECORD="${echo ${POD_IP} | sed 's/\\./-/g'}"
 
 # Run the Phoenix app
 CMD ["sh", "./entrypoint.sh"]

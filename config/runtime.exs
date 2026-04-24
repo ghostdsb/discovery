@@ -28,4 +28,18 @@ if config_env() == :prod or config_env() == :develop do
   #
   # Then you can assemble a release by calling `mix release`.
   # See `mix help release` for more information.
+  aws_access_id = System.fetch_env!("AWS_ACCESS_KEY_ID")
+  aws_access_key = System.fetch_env!("AWS_SECRET_ACCESS_KEY")
+  discovery_bucket = System.fetch_env!("DISCOVERY_BUCKET")
+  discovery_bucket_url = System.fetch_env!("DISCOVERY_BUCKET_URL")
+  git_access_token = System.fetch_env!("GITHUB_REPO_TOKEN")
+
+  config :ex_aws,
+    access_key_id: aws_access_id,
+    secret_access_key: aws_access_key
+
+  config :discovery,
+    discovery_bucket: discovery_bucket,
+    discovery_bucket_url: discovery_bucket_url,
+    git_access_token: git_access_token
 end

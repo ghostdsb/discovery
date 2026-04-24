@@ -1,12 +1,10 @@
 defmodule Discovery.MixProject do
   use Mix.Project
 
-  @version "0.2.1"
-
   def project do
     [
       app: :discovery,
-      version: @version,
+      version: "0.3.0",
       elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       compilers: [:phoenix, :gettext] ++ Mix.compilers(),
@@ -56,6 +54,10 @@ defmodule Discovery.MixProject do
       {:quantum, "~> 3.0"},
       {:yaml_elixir, "~> 2.9.0"},
       {:tarams, "~> 1.6.1"},
+      {:ex_aws, "~> 2.1", override: true},
+      {:ex_aws_s3, "~> 2.0"},
+      {:sweet_xml, "~> 0.6"},
+      {:httpoison, "~> 1.8"},
       {:yamlix, git: "https://github.com/ghostdsb/yamlix.git", branch: "master"}
       # {:yamlix, path: "../ext-modules/yamlix"}
     ]

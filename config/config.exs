@@ -20,6 +20,16 @@ config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
+# Aws s3 config
+config :ex_aws,
+  json_codec: Jason
+
+config :ex_aws, :s3,
+  scheme: "https://",
+  region: "ap-south-1",
+  host: "s3-ap-south-1.amazonaws.com",
+  port: 443
+
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
@@ -44,14 +54,18 @@ config :discovery,
   service_account: "discovery-sa",
   use_external_ingress_class: true,
   ingress_class: "nginx-external",
-  image_pull_secrets: "dockerhub-auth-discovery"
+  image_pull_secrets: "dockerhub-auth-discovery",
+  kubernetes_arch: "amd64"
 
 config :discovery, :api_version,
   config_map: "v1",
   deployment: "apps/v1",
-  ingress: "networking.k8s.io/v1beta1",
+  ingress: "networking.k8s.io/v1",
   namespace: "v1",
   service: "v1"
+
+config :discovery,
+  git_username: "ghostdsb"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
