@@ -53,7 +53,7 @@ curl -v -k -H --cacert ~/.minikube/ca.crt -H "Authorization: Bearer $(cat ~/[tok
 1. k8s client 
   
     client v1.1.5 has apply, build etc apis but
-    k8s apply calls this  `K8s.Operation.build(:apply, "/home/ghostdsb/Documents/gamezop/discoveryminikube/discovery/enterprise/ingress.yml", [field_manager: "elixir", force: true])`
+    k8s apply calls this  `K8s.Operation.build(:apply, "/home/ghostdsb/Documents/gamezop/discoverydata/discovery/enterprise/ingress.yml", [field_manager: "elixir", force: true])`
 
 2. instead of kubectl in container, use http api.
   

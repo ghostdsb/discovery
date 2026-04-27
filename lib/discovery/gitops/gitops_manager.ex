@@ -7,9 +7,11 @@ defmodule Discovery.GitOps.GitOpsManager do
   use GenServer
   require Logger
 
-  alias Discovery.GitOps.{GitAdapter, RepoLayout, ImageUpdater}
+  alias Discovery.GitOps.{GitAdapter, RepoLayout, ImageUpdater, ConfigFetcher}
+  alias Discovery.K8s.Resources.{ConfigMap, Deployment, Ingress, Service}
+  alias Discovery.Engine.Builder
 
-  ## Client functions
+  @root_dir "data/discovery"
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -49,7 +51,7 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   @doc """
-  Syncs the local minikube/discovery folder to the GitOps repository.
+  Syncs the local data/discovery folder to the GitOps repository.
   This replaces the S3 upload functionality.
   """
   @spec sync_to_gitops(String.t()) :: {:ok, map()} | {:error, String.t()}
@@ -60,15 +62,15 @@ defmodule Discovery.GitOps.GitOpsManager do
   @doc """
   Syncs a specific app's deployment to the GitOps repository.
   """
-  @spec sync_app_to_gitops(String.t(), String.t()) :: {:ok, map()} | {:error, String.t()}
+  # @spec sync_app_to_gitops(String.t(), String.t()) :: {:ok, map()} | {:error, String.t()}
   def sync_app_to_gitops(app_name, commit_message \\ nil) do
     message = commit_message || "Update #{app_name} deployment in GitOps"
     GenServer.call(__MODULE__, {:sync_app_to_gitops, app_name, message}, :infinity)
   end
 
   @doc """
-  Syncs the entire minikube/discovery folder to the GitOps repository.
-  This copies all files from minikube/discovery to /tmp/discovery-k8s and pushes to Git.
+  Syncs the entire data/discovery folder to the GitOps repository.
+  This copies all files from data/discovery to /tmp/discovery-k8s and pushes to Git.
   """
   @spec sync_from_discovery_to_gitops(String.t()) :: {:ok, map()} | {:error, String.t()}
   def sync_from_discovery_to_gitops(commit_message \\ "Sync Discovery state to GitOps") do
@@ -76,10 +78,10 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   @doc """
-  Syncs a specific app from minikube/discovery to the GitOps repository.
+  Syncs a specific app from data/discovery to the GitOps repository.
   """
-  @spec sync_app_from_discovery_to_gitops(String.t(), String.t()) ::
-          {:ok, map()} | {:error, String.t()}
+  # @spec sync_app_from_discovery_to_gitops(String.t(), String.t()) ::
+  #         {:ok, map()} | {:error, String.t()}
   def sync_app_from_discovery_to_gitops(app_name, commit_message \\ nil) do
     message = commit_message || "Update #{app_name} from Discovery to GitOps"
     GenServer.call(__MODULE__, {:sync_app_from_discovery_to_gitops, app_name, message}, :infinity)
@@ -326,7 +328,7 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp do_sync_from_discovery_to_gitops(commit_message, state) do
-    discovery_path = "minikube/discovery"
+    discovery_path = @root_dir
 
     with :ok <- ensure_discovery_folder_exists(discovery_path),
          :ok <- copy_discovery_to_gitops(discovery_path, state.local_path),
@@ -342,7 +344,7 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp do_sync_app_from_discovery_to_gitops(app_name, commit_message, state) do
-    discovery_path = "minikube/discovery"
+    discovery_path = @root_dir
     app_discovery_path = Path.join(discovery_path, app_name)
     app_gitops_path = Path.join(state.local_path, app_name)
 
@@ -408,7 +410,7 @@ defmodule Discovery.GitOps.GitOpsManager do
 
     with {:ok, _} <- ensure_repo_cloned(state),
          {:ok, config_data} <-
-           Discovery.GitOps.ConfigFetcher.fetch(
+           ConfigFetcher.fetch(
              app_name,
              environment,
              config_ref,
@@ -531,7 +533,6 @@ defmodule Discovery.GitOps.GitOpsManager do
     end
   end
 
-
   defp write_latest_endpoint_to_metadata_db(app_name, deployment_name, app_host) do
     # Mirror structure used by Engine.Builder.update_app_metadata/3
     endpoint = computed_endpoint(app_host, deployment_name)
@@ -574,9 +575,9 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp write_configmap_using_resource(app_dir, app, state) do
-    with {:ok, configmap} <- Discovery.Resources.ConfigMap.set_config_map(app),
+    with {:ok, configmap} <- ConfigMap.set_config_map(app),
          :ok <-
-           Discovery.Resources.ConfigMap.write_to_file(
+           ConfigMap.write_to_file(
              configmap,
              Path.join(app_dir, state.file_names.configmap)
            ) do
@@ -587,9 +588,9 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp write_deployment_using_resource(app_dir, app, state) do
-    with {:ok, deployment} <- Discovery.Resources.Deployment.create_deployment(app),
+    with {:ok, deployment} <- Deployment.create_deployment(app),
          :ok <-
-           Discovery.Resources.Deployment.write_to_file(
+           Deployment.write_to_file(
              deployment,
              Path.join(app_dir, state.file_names.deployment)
            ) do
@@ -600,9 +601,9 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp write_service_using_resource(app_dir, app, state) do
-    with {:ok, service} <- Discovery.Resources.Service.create_service(app),
+    with {:ok, service} <- Service.create_service(app),
          :ok <-
-           Discovery.Resources.Service.write_to_file(
+           Service.write_to_file(
              service,
              Path.join(app_dir, state.file_names.service)
            ) do
@@ -626,7 +627,7 @@ defmodule Discovery.GitOps.GitOpsManager do
 
     with {:ok, {_ingress_status, ingress}} <- fetch_or_create_ingress(ingress_path, app),
          updated_ingress <- add_ingress_path_for_deployment(ingress, deployment_name),
-         :ok <- Discovery.Resources.Ingress.write_to_file(updated_ingress, ingress_path) do
+         :ok <- Ingress.write_to_file(updated_ingress, ingress_path) do
       :ok
     else
       {:error, reason} -> {:error, "Ingress update failed: #{inspect(reason)}"}

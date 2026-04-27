@@ -1,12 +1,13 @@
-defmodule Discovery.Deploy.DeployUtils do
+defmodule Discovery.Deploy.Utils do
   @moduledoc """
   Includes handles all the utilities for CRUD operations of app deployments
   """
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Engine.Builder
   alias Discovery.Utils
+  alias Discovery.Storage.S3Uploader
 
-  alias Discovery.Resources.{
+  alias Discovery.K8s.Resources.{
     ConfigMap,
     Deployment,
     Ingress,
@@ -15,7 +16,7 @@ defmodule Discovery.Deploy.DeployUtils do
 
   require Logger
 
-  @root_dir "minikube/discovery/"
+  @root_dir "data/discovery/"
 
   @type t :: %DeployUtils{
           app_name: String.t(),
@@ -115,15 +116,15 @@ defmodule Discovery.Deploy.DeployUtils do
     Ingress.delete_operation(app_name)
     |> delete_resource(app_name)
 
-    app_location = "minikube/discovery/#{app_name}"
+    app_location = "data/discovery/#{app_name}"
 
     File.rm_rf(app_location)
-    |> then(fn _ -> Discovery.S3Uploader.delete_content(bucket, app_location) end)
+    |> then(fn _ -> S3Uploader.delete_content(bucket, app_location) end)
   end
 
   @spec create_namespace_directory :: :ok
   def create_namespace_directory do
-    namespace_file_location = "minikube/discovery/namespace.yml"
+    namespace_file_location = "data/discovery/namespace.yml"
 
     if File.exists?(namespace_file_location) do
       Utils.puts_warn("NAMESPACE DIRECTORY EXISTS")
@@ -135,11 +136,11 @@ defmodule Discovery.Deploy.DeployUtils do
       bucket = Application.get_env(:discovery, :discovery_bucket)
 
       # uploads namespace to S3
-      Discovery.S3Uploader.upload_file(namespace_file_location, bucket, namespace_file_location)
+      S3Uploader.upload_file(namespace_file_location, bucket, namespace_file_location)
 
       # downloads all files from S3, its ok if we rewrite namespace, by this we get the config files already
       # uploaded to S3 by previous deployment
-      Discovery.S3Uploader.download_contents(bucket)
+      S3Uploader.download_contents(bucket)
       Utils.puts_warn("RUNNING NAMESPACE: discovery")
     end
   end
@@ -149,24 +150,24 @@ defmodule Discovery.Deploy.DeployUtils do
     if File.dir?(@root_dir <> app_name) do
       :ok
     else
-      File.mkdir("minikube/discovery/#{app_name}")
+      File.mkdir("data/discovery/#{app_name}")
     end
   end
 
   @spec create_app_version_folder(app()) :: :ok | {:error, term()}
   defp create_app_version_folder(app) do
-    File.mkdir("minikube/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}")
+    File.mkdir("data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}")
   end
 
   @spec delete_app_version_folder(del_deployment()) :: {:ok, list()} | {:error, String.t()}
   defp delete_app_version_folder(app) do
-    app_version_location = "minikube/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}"
+    app_version_location = "data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}"
     bucket = Application.get_env(:discovery, :discovery_bucket)
 
     File.rm_rf(app_version_location)
     |> case do
       {:ok, list} ->
-        Discovery.S3Uploader.delete_content(bucket, app_version_location)
+        S3Uploader.delete_content(bucket, app_version_location)
         {:ok, list}
 
       {:error, reason, _} ->

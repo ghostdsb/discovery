@@ -1,8 +1,8 @@
 defmodule DiscoveryWeb.PageLive do
   @moduledoc false
   use DiscoveryWeb, :live_view
-  alias Discovery.Bridge.BridgeUtils
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Bridge.Utils, as: BridgeUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   @impl true
   def mount(_params, _session, socket) do
     {:ok,

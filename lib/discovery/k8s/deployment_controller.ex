@@ -1,11 +1,11 @@
-defmodule Discovery.Controller.DeploymentController do
+defmodule Discovery.K8s.DeploymentController do
   @moduledoc """
   Controller manager handles communications between FE(Bridge) and BE(Deployment Manager & Engine)
   """
 
   use GenServer
 
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
 
   ### CLIENT FUNCTIONS ###

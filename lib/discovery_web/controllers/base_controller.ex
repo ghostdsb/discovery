@@ -1,7 +1,7 @@
 defmodule DiscoveryWeb.BaseController do
   use DiscoveryWeb, :controller
 
-  alias Discovery.Bridge.BridgeUtils
+  alias Discovery.Bridge.Utils, as: BridgeUtils
 
   def ping(conn, _params) do
     json(conn, "pong from discovery: v#{Application.spec(:discovery, :vsn)}")

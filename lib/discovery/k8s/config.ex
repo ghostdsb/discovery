@@ -1,4 +1,4 @@
-defmodule Discovery.K8Config do
+defmodule Discovery.K8s.Config do
   @moduledoc """
   For getting common K8 configs
   """

@@ -1,12 +1,9 @@
 defmodule Discovery.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
-
   use Application
 
-  alias Discovery.Controller.DeploymentController
-  alias Discovery.Deploy.DeployManager
+  alias Discovery.K8s.DeploymentController
+  alias Discovery.Deploy.Manager, as: DeployManager
   alias Discovery.Engine.Builder
   alias Discovery.GitOps.GitOpsManager
   alias Discovery.Scheduler
@@ -14,7 +11,11 @@ defmodule Discovery.Application do
 
   require Logger
 
+  @impl true
   def start(_type, _args) do
+    # Initialize ETS tables
+    create_tables()
+
     git_access_token = Application.get_env(:discovery, :git_access_token)
 
     children = [
@@ -27,56 +28,43 @@ defmodule Discovery.Application do
       {Builder, []},
       {DeploymentController, []},
       {DeployManager, []},
-      {GitOpsManager,
-       [
-         repo_url: "git@github.com:gamezop/discovery-k8s.git",
-         token: git_access_token,
-         local_path: "/tmp/discovery-k8s",
-         use_pr: false,
-         write_layout: :env_first,
-         env_root_map: %{"dev" => "dev", "staging" => "staging", "prod" => "prod"},
-         base_dir_name: "base",
-         file_names: %{
-           deployment: "deploy.yml",
-           configmap: "configmap.yml",
-           secret: "secret.yml",
-           service: "service.yml",
-           ingress: "ingress.yml"
-         }
-       ]},
+      {GitOpsManager, gitops_opts(git_access_token)},
       Scheduler
-      # Start a worker by calling: Discovery.Worker.start_link(arg)
-      # {Discovery.Worker, arg}
     ]
 
-    create_metadata_db()
-    create_bridge_db()
-    create_idempotency_db()
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Discovery.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
-  # Tell Phoenix to update the endpoint configuration
-  # whenever the application is updated.
+  @impl true
   def config_change(changed, _new, removed) do
     DiscoveryWeb.Endpoint.config_change(changed, removed)
     :ok
   end
 
-  defp create_metadata_db do
+  defp create_tables do
     :ets.new(Utils.metadata_db(), [:set, :named_table, :public])
-    Logger.info("MetadataDB created \n\n")
-  end
-
-  defp create_bridge_db do
     :ets.new(Utils.bridge_db(), [:set, :named_table, :public])
-    Logger.info("BridgeDB created \n\n")
+    :ets.new(Utils.idempotency_db(), [:set, :named_table, :public])
+    Logger.info("Internal ETS tables initialized")
   end
 
-  defp create_idempotency_db do
-    :ets.new(Utils.idempotency_db(), [:set, :named_table, :public])
-    Logger.info("IdempotencyDB created \n\n")
+  defp gitops_opts(token) do
+    [
+      repo_url: "git@github.com:gamezop/discovery-k8s.git",
+      token: token,
+      local_path: "/tmp/discovery-k8s",
+      use_pr: false,
+      write_layout: :env_first,
+      env_root_map: %{"dev" => "dev", "staging" => "staging", "prod" => "prod"},
+      base_dir_name: "base",
+      file_names: %{
+        deployment: "deploy.yml",
+        configmap: "configmap.yml",
+        secret: "secret.yml",
+        service: "service.yml",
+        ingress: "ingress.yml"
+      }
+    ]
   end
 end

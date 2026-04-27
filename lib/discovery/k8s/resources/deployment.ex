@@ -1,11 +1,11 @@
-defmodule Discovery.Resources.Deployment do
+defmodule Discovery.K8s.Resources.Deployment do
   @moduledoc """
   Deployment related K8s operations
   """
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
 
-  import Discovery.K8Config
+  import Discovery.K8s.Config
 
   @template_path "#{:code.priv_dir(:discovery)}/templates/deploy.yml"
 
@@ -93,7 +93,7 @@ defmodule Discovery.Resources.Deployment do
   def resource_file(app) do
     case File.cwd() do
       {:ok, cwd} ->
-        {:ok, cwd <> "/minikube/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}/deploy.yml"}
+        {:ok, cwd <> "/data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}/deploy.yml"}
 
       _ ->
         {:error, "no read permission"}

@@ -1,17 +1,17 @@
-defmodule Discovery.Resources.Ingress do
+defmodule Discovery.K8s.Resources.Ingress do
   @moduledoc """
   Ingress related K8s operations
   """
 
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
 
-  import Discovery.K8Config
+  import Discovery.K8s.Config
 
   @spec fetch_configuration(DeployUtils.app() | DeployUtils.del_deployment()) ::
           {:error, any()} | {:ok, {atom(), map()}}
   def fetch_configuration(app) do
-    File.exists?("minikube/discovery/#{app.app_name}/ingress.yml")
+    File.exists?("data/discovery/#{app.app_name}/ingress.yml")
     |> if do
       current_ingress_configuration(app.app_name)
     else
@@ -73,7 +73,7 @@ defmodule Discovery.Resources.Ingress do
           {:ok, String.t()} | {:error, String.t()}
   def resource_file(app) do
     case File.cwd() do
-      {:ok, cwd} -> {:ok, cwd <> "/minikube/discovery/#{app.app_name}/ingress.yml"}
+      {:ok, cwd} -> {:ok, cwd <> "/data/discovery/#{app.app_name}/ingress.yml"}
       _ -> {:error, "no read permission"}
     end
   end
@@ -122,7 +122,7 @@ defmodule Discovery.Resources.Ingress do
 
   @spec current_ingress_configuration(String.t()) :: {:ok, {atom(), map()}} | {:error, String.t()}
   defp current_ingress_configuration(app_name) do
-    "minikube/discovery/#{app_name}/ingress.yml"
+    "data/discovery/#{app_name}/ingress.yml"
     |> YamlElixir.read_from_file(atoms: false)
     |> case do
       {:ok, ingress} -> {:ok, {:old_ingress, ingress}}

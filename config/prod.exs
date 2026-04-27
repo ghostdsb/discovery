@@ -10,13 +10,11 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :discovery, DiscoveryWeb.Endpoint,
-  url: [host: "0.0.0.0", port: 80],
+  url: [host: System.get_env("PHX_HOST") || "0.0.0.0", port: 80],
   cache_static_manifest: "priv/static/cache_manifest.json"
 
 # Do not print debug messages in production
 config :logger, level: :info
-
-config :discovery, :base_url, "https://discoveryk8.skillclash.com"
 # ## SSL Support
 #
 # To get SSL working, you will need to add the `https` key

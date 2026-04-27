@@ -4,7 +4,7 @@
 # remember to add this file to your .gitignore.
 import Config
 
-if config_env() == :prod or config_env() == :develop do
+if config_env() == :prod do
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       raise """
@@ -34,6 +34,7 @@ if config_env() == :prod or config_env() == :develop do
   discovery_bucket_url = System.fetch_env!("DISCOVERY_BUCKET_URL")
   git_access_token = System.fetch_env!("GITHUB_REPO_TOKEN")
   api_token = System.get_env("API_TOKEN") || "discovery-secret-token"
+  base_url = System.get_env("BASE_URL") || "https://discovery.example.com"
 
   config :ex_aws,
     access_key_id: aws_access_id,
@@ -43,5 +44,6 @@ if config_env() == :prod or config_env() == :develop do
     discovery_bucket: discovery_bucket,
     discovery_bucket_url: discovery_bucket_url,
     git_access_token: git_access_token,
-    api_token: api_token
+    api_token: api_token,
+    base_url: base_url
 end

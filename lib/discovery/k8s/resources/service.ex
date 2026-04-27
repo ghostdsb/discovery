@@ -1,11 +1,11 @@
-defmodule Discovery.Resources.Service do
+defmodule Discovery.K8s.Resources.Service do
   @moduledoc """
   Service related K8s operations
   """
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
 
-  import Discovery.K8Config
+  import Discovery.K8s.Config
 
   @spec create_service(DeployUtils.app()) :: {:error, any()} | {:ok, map()}
   def create_service(app) do
@@ -36,7 +36,7 @@ defmodule Discovery.Resources.Service do
   def resource_file(app) do
     case File.cwd() do
       {:ok, cwd} ->
-        {:ok, cwd <> "/minikube/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}/service.yml"}
+        {:ok, cwd <> "/data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}/service.yml"}
 
       _ ->
         {:error, "no read permission"}

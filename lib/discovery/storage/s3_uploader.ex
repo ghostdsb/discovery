@@ -1,4 +1,4 @@
-defmodule Discovery.S3Uploader do
+defmodule Discovery.Storage.S3Uploader do
   @moduledoc """
     Module for S3 related functions
   """

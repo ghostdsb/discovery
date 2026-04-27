@@ -1,10 +1,10 @@
-defmodule Discovery.Deploy.DeployManager do
+defmodule Discovery.Deploy.Manager do
   @moduledoc """
   Manages the deployment communications from controller, orchestrates the k8 deployments.
   """
 
   use GenServer
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
   ## Client functions
   def start_link(_opts) do
@@ -32,7 +32,7 @@ defmodule Discovery.Deploy.DeployManager do
   def init(_opts) do
     # creates the namespace directory, if not there
     DeployUtils.create_namespace_directory()
-    Utils.puts_success("DeployManager initialized successfully!!")
+    Utils.puts_success("Manager initialized successfully!!")
     {:ok, %{}}
   end
 

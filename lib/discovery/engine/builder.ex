@@ -6,7 +6,7 @@ defmodule Discovery.Engine.Builder do
 
   require Logger
 
-  alias Discovery.Resources.{
+  alias Discovery.K8s.Resources.{
     Deployment,
     Ingress
   }

@@ -1,11 +1,11 @@
-defmodule Discovery.Resources.ConfigMap do
+defmodule Discovery.K8s.Resources.ConfigMap do
   @moduledoc """
   ConfigMap related K8s operations
   """
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
 
-  import Discovery.K8Config
+  import Discovery.K8s.Config
 
   @spec set_config_map(DeployUtils.app()) :: {:error, any()} | {:ok, map()}
   def set_config_map(app) do
@@ -31,8 +31,7 @@ defmodule Discovery.Resources.ConfigMap do
   def resource_file(app) do
     case File.cwd() do
       {:ok, cwd} ->
-        {:ok,
-         cwd <> "/minikube/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}/configmap.yml"}
+        {:ok, cwd <> "/data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}/configmap.yml"}
 
       _ ->
         {:error, "no read permission"}

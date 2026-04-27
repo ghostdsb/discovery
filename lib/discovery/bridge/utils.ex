@@ -1,10 +1,10 @@
-defmodule Discovery.Bridge.BridgeUtils do
+defmodule Discovery.Bridge.Utils do
   @moduledoc """
   Manages the communications of liveview with the backend.
   """
-  alias Discovery.Controller.DeploymentController
-  alias Discovery.Deploy.DeployManager
-  alias Discovery.Deploy.DeployUtils
+  alias Discovery.K8s.DeploymentController
+  alias Discovery.Deploy.Manager
+  alias Discovery.Deploy.Utils, as: DeployUtils
 
   @doc """
   Fetches the deployment data of an app from metadatadb ets
@@ -75,7 +75,7 @@ defmodule Discovery.Bridge.BridgeUtils do
   @spec create_deployment(DeployUtils.t()) :: {:ok, term()} | {:error, term()}
   def create_deployment(deployment_details) do
     deployment_details
-    |> DeployManager.create()
+    |> Manager.create()
   end
 
   @doc """
@@ -89,6 +89,6 @@ defmodule Discovery.Bridge.BridgeUtils do
       deployment_name
       |> String.split("-")
 
-    DeployManager.delete(%{app_name: app_name, uid: uid})
+    Manager.delete(%{app_name: app_name, uid: uid})
   end
 end

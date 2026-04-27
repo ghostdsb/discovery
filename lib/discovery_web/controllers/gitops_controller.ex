@@ -171,7 +171,7 @@ defmodule DiscoveryWeb.GitOpsController do
   end
 
   @doc """
-  Syncs the entire minikube/discovery folder to the GitOps repository.
+  Syncs the entire data/discovery folder to the GitOps repository.
   """
   @spec sync_from_discovery_to_gitops(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def sync_from_discovery_to_gitops(conn, params) do
@@ -198,7 +198,7 @@ defmodule DiscoveryWeb.GitOpsController do
   end
 
   @doc """
-  Syncs a specific app from minikube/discovery to the GitOps repository.
+  Syncs a specific app from data/discovery to the GitOps repository.
   """
   @spec sync_app_from_discovery_to_gitops(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def sync_app_from_discovery_to_gitops(conn, params) do

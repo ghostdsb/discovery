@@ -3,8 +3,8 @@ defmodule Discovery.Engine.Cleaner do
   Deletes zombie deployments with lifespan more than 1hr from latest
   deployment at an interval of 1 day
   """
-  alias Discovery.Bridge.BridgeUtils
-  alias Discovery.Controller.DeploymentController
+  alias Discovery.Bridge.Utils, as: BridgeUtils
+  alias Discovery.K8s.DeploymentController
   alias Discovery.Engine.Reader
 
   require Logger
