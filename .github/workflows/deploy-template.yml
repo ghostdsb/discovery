@@ -1,0 +1,35 @@
+name: Deploy to Discovery
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Deploy via Discovery
+        run: |
+          # Extract metadata
+          APP_NAME=$(basename ${{ github.repository }})
+          IMAGE_TAG=${{ github.sha }}
+          # Assuming you push image to a registry before this
+          IMAGE="your-registry/${APP_NAME}:${IMAGE_TAG}"
+          
+          curl -X POST "${{ secrets.DISCOVERY_URL }}/api/ci/deploy" \
+            -H "Content-Type: application/json" \
+            -H "x-api-token: ${{ secrets.DISCOVERY_API_TOKEN }}" \
+            -d "{
+              \"app_name\": \"${APP_NAME}\",
+              \"image\": \"${IMAGE}\",
+              \"environment\": \"production\",
+              \"config_ref\": {
+                \"app_host\": \"${APP_NAME}.example.com\",
+                \"app_target_port\": 80,
+                \"app_container_port\": 4000
+              },
+              \"idempotency_key\": \"${{ github.sha }}\"
+            }"

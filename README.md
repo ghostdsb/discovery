@@ -151,6 +151,36 @@ The dashboard is called **Bridge**
 
     ```
 
+## CI/CD & GitOps (Jenkins Alternative)
+
+Discovery can act as a lightweight, GitOps-centric CD controller. You can trigger deployments via a simple API call from your CI pipeline (GitHub Actions, GitLab CI, etc.).
+
+### Deploying via CI API
+
+```bash
+curl -X POST "http://discovery.local/api/ci/deploy" \
+  -H "Content-Type: application/json" \
+  -H "x-api-token: YOUR_DISCOVERY_API_TOKEN" \
+  -d '{
+    "app_name": "my-app",
+    "image": "my-registry/my-app:sha-12345",
+    "environment": "production",
+    "config_ref": {
+      "app_host": "my-app.example.com",
+      "app_target_port": 80,
+      "app_container_port": 4000
+    },
+    "idempotency_key": "unique-build-id"
+  }'
+```
+
+### GitOps Flow
+
+1. **Trigger**: CI pipeline calls Discovery API.
+2. **Orchestrate**: Discovery clones the GitOps repository.
+3. **Generate**: It generates Kubernetes manifests (Deployment, Service, Ingress, ConfigMap) based on the provided parameters.
+4. **Push**: It commits and pushes the changes to the GitOps repository.
+5. **Apply**: Discovery optionally applies the changes directly to K8s for immediate availability (configurable).
 
 ## Demo time
 
@@ -202,9 +232,12 @@ The dashboard is called **Bridge**
 
 
 ## Roadmap
-- Taking out Discovery from minikube and trying with EKS.
-- Automatic zombie deployment cleanup.
-- More functionalities in Bridge.
+- [x] API-driven CI/CD integration.
+- [x] Idempotent deployments.
+- [x] GitOps repository management (multi-layout support).
+- [ ] Automatic zombie deployment cleanup.
+- [ ] Support for private Docker registries.
+- [ ] Multi-cluster support.
 ## Credits
 
 <div>Discovery logo made by <a href="" title="Nhor Phai">Nhor Phai</a> from <a href="https://www.flaticon.com/" title="Flaticon">www.flaticon.com</a></div>

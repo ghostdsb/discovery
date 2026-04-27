@@ -17,9 +17,9 @@ defmodule Discovery.GitOps.ConfigFetcher do
           optional(:reuse_last) => boolean()
         }
 
-  @spec fetch(String.t(), String.t(), config_ref, String.t()) ::
+  @spec fetch(String.t(), String.t(), config_ref, String.t(), map()) ::
           {:ok, map()} | {:error, String.t()}
-  def fetch(app_name, _environment, config_ref, working_dir) do
+  def fetch(app_name, environment, config_ref, working_dir, state) do
     cond do
       is_map(config_ref) and Map.has_key?(config_ref, :git) ->
         fetch_from_git(config_ref.git, working_dir)
@@ -34,7 +34,7 @@ defmodule Discovery.GitOps.ConfigFetcher do
         fetch_from_artifact(config_ref["artifact"])
 
       is_map(config_ref) and (config_ref[:reuse_last] || config_ref["reuse_last"]) ->
-        reuse_last(app_name, working_dir)
+        reuse_last(app_name, environment, working_dir, state)
 
       true ->
         {:error, "invalid config_ref"}
@@ -135,21 +135,29 @@ defmodule Discovery.GitOps.ConfigFetcher do
     end
   end
 
-  defp reuse_last(app_name, working_dir) do
-    app_dir = Path.join([working_dir, "apps", app_name])
+  defp reuse_last(app_name, environment, working_dir, state) do
+    app_parent_dir =
+      case state.write_layout do
+        :env_first ->
+          env_root = Map.get(state.env_root_map, environment, environment)
+          Path.join([working_dir, env_root, app_name])
 
-    with true <- File.dir?(app_dir),
-         {:ok, entries} <- File.ls(app_dir),
+        _ ->
+          Path.join([working_dir, "apps", app_name])
+      end
+
+    with true <- File.dir?(app_parent_dir),
+         {:ok, entries} <- File.ls(app_parent_dir),
          [latest | _] <-
            entries |> Enum.filter(&String.contains?(&1, "#{app_name}-")) |> Enum.sort(:desc),
-         cfg_path <- Path.join([app_dir, latest, "configmap.yaml"]),
+         cfg_path <- Path.join([app_parent_dir, latest, state.file_names.configmap]),
          true <- File.exists?(cfg_path),
          {:ok, content} <- File.read(cfg_path),
          {:ok, map} <- YamlElixir.read_from_string(content, atoms: false) do
       data = map["data"] || %{}
       {:ok, data}
     else
-      false -> {:error, "no previous deployments for #{app_name}"}
+      false -> {:error, "no previous deployments for #{app_name} at #{app_parent_dir}"}
       {:error, reason} -> {:error, "read previous config error: #{inspect(reason)}"}
       _ -> {:error, "no previous config found"}
     end

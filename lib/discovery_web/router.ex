@@ -12,8 +12,16 @@ defmodule DiscoveryWeb.Router do
   end
 
   pipeline :api do
-    plug CORSPlug, origin: "*"
+    plug CORSPlug, origin: {DiscoveryWeb.Router, :cors_origins, []}
     plug :accepts, ["json"]
+  end
+
+  pipeline :ci_auth do
+    plug DiscoveryWeb.Plugs.ApiAuth
+  end
+
+  def cors_origins do
+    Application.get_env(:discovery, :cors_origins, ["*"])
   end
 
   scope "/", DiscoveryWeb do
@@ -48,6 +56,7 @@ defmodule DiscoveryWeb.Router do
 
     # CI endpoints
     scope "/ci" do
+      pipe_through :ci_auth
       post "/deploy", CiController, :deploy
       get "/status", CiController, :status
     end

@@ -65,7 +65,8 @@ config :discovery, :api_version,
   service: "v1"
 
 config :discovery,
-  git_username: "ghostdsb"
+  git_username: "ghostdsb",
+  api_token: System.get_env("API_TOKEN") || "discovery-secret-token"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

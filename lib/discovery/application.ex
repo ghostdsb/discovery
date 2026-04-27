@@ -51,6 +51,7 @@ defmodule Discovery.Application do
 
     create_metadata_db()
     create_bridge_db()
+    create_idempotency_db()
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Discovery.Supervisor]
@@ -72,5 +73,10 @@ defmodule Discovery.Application do
   defp create_bridge_db do
     :ets.new(Utils.bridge_db(), [:set, :named_table, :public])
     Logger.info("BridgeDB created \n\n")
+  end
+
+  defp create_idempotency_db do
+    :ets.new(Utils.idempotency_db(), [:set, :named_table, :public])
+    Logger.info("IdempotencyDB created \n\n")
   end
 end

@@ -25,6 +25,14 @@ defmodule Discovery.Utils do
     :bridgedb
   end
 
+  @doc """
+  Returns the IdempotencyDB name.
+  """
+  @spec idempotency_db() :: atom()
+  def idempotency_db do
+    :idempotencydb
+  end
+
   @spec puts_success(any) :: :ok
   def puts_success(term) do
     IO.puts(IO.ANSI.format([:green_background, :black, inspect(term)]))

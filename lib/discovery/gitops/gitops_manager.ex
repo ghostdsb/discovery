@@ -360,7 +360,33 @@ defmodule Discovery.GitOps.GitOpsManager do
     end
   end
 
-  defp do_ci_deploy(app_name, image, environment, config_ref, _idempotency_key, state) do
+  defp do_ci_deploy(app_name, image, environment, config_ref, idempotency_key, state) do
+    case check_idempotency(idempotency_key) do
+      {:ok, result} ->
+        Logger.info("Returning idempotent result for key: #{idempotency_key}")
+        {:ok, result}
+
+      :not_found ->
+        perform_ci_deploy(app_name, image, environment, config_ref, idempotency_key, state)
+    end
+  end
+
+  defp check_idempotency(nil), do: :not_found
+
+  defp check_idempotency(key) do
+    case :ets.lookup(Discovery.Utils.idempotency_db(), key) do
+      [{^key, result}] -> {:ok, result}
+      [] -> :not_found
+    end
+  end
+
+  defp save_idempotency(nil, _result), do: :ok
+
+  defp save_idempotency(key, result) do
+    :ets.insert(Discovery.Utils.idempotency_db(), {key, result})
+  end
+
+  defp perform_ci_deploy(app_name, image, environment, config_ref, idempotency_key, state) do
     uid = Discovery.Utils.get_uid()
     deployment_name = "#{app_name}-#{uid}"
 
@@ -376,8 +402,8 @@ defmodule Discovery.GitOps.GitOpsManager do
       config_map: %{},
       app_host: config_ref["app_host"] || "#{app_name}.example.com",
       secret_refs: Map.get(config_ref, "secret_refs", []),
-      app_target_port: 80,
-      app_container_port: 4000
+      app_target_port: config_ref["app_target_port"] || 80,
+      app_container_port: config_ref["app_container_port"] || 4000
     }
 
     with {:ok, _} <- ensure_repo_cloned(state),
@@ -386,7 +412,8 @@ defmodule Discovery.GitOps.GitOpsManager do
              app_name,
              environment,
              config_ref,
-             state.local_path
+             state.local_path,
+             state
            ),
          app_with_config <- Map.put(app, :config_map, config_data),
          :ok <- write_configmap_using_resource(app_dir, app_with_config, state),
@@ -405,23 +432,26 @@ defmodule Discovery.GitOps.GitOpsManager do
       # Immediately record latest endpoint for clients querying Discovery
       write_latest_endpoint_to_metadata_db(app_name, deployment_name, app_with_config.app_host)
 
-      {:ok,
-       %{
-         deployment_name: deployment_name,
-         app_name: app_name,
-         environment: environment,
-         image: image,
-         git_paths: %{
-           deployment:
-             relative_from_root(state.local_path, Path.join(app_dir, state.file_names.deployment)),
-           configmap:
-             relative_from_root(state.local_path, Path.join(app_dir, state.file_names.configmap)),
-           service:
-             relative_from_root(state.local_path, Path.join(app_dir, state.file_names.service))
-         },
-         endpoint: computed_endpoint(app_with_config.app_host, deployment_name),
-         commit: commit_result
-       }}
+      result = %{
+        deployment_name: deployment_name,
+        app_name: app_name,
+        environment: environment,
+        image: image,
+        git_paths: %{
+          deployment:
+            relative_from_root(state.local_path, Path.join(app_dir, state.file_names.deployment)),
+          configmap:
+            relative_from_root(state.local_path, Path.join(app_dir, state.file_names.configmap)),
+          service:
+            relative_from_root(state.local_path, Path.join(app_dir, state.file_names.service))
+        },
+        endpoint: computed_endpoint(app_with_config.app_host, deployment_name),
+        commit: commit_result
+      }
+
+      save_idempotency(idempotency_key, result)
+
+      {:ok, result}
     else
       {:error, reason} -> {:error, reason}
     end
@@ -467,21 +497,40 @@ defmodule Discovery.GitOps.GitOpsManager do
     alias Discovery.Engine.Builder
 
     with conn when not is_nil(conn) <- Builder.get_conn(),
-         {:ok, resource_map} <- K8s.Resource.from_file(manifest_path),
-         operation <- K8s.Client.create(resource_map),
-         {:ok, _} <- K8s.Client.run(conn, operation) do
-      Logger.info("Successfully applied manifest: #{manifest_path}")
-      :ok
+         {:ok, resource_map} <- K8s.Resource.from_file(manifest_path) do
+      case K8s.Client.create(resource_map) |> K8s.Client.run(conn) do
+        {:ok, _} ->
+          Logger.info("Successfully created manifest: #{manifest_path}")
+          :ok
+
+        {:error, %{"reason" => "AlreadyExists"}} ->
+          Logger.info("Manifest already exists, patching: #{manifest_path}")
+
+          case K8s.Client.patch(resource_map) |> K8s.Client.run(conn) do
+            {:ok, _} ->
+              Logger.info("Successfully patched manifest: #{manifest_path}")
+              :ok
+
+            {:error, error} ->
+              Logger.error("Failed to patch manifest #{manifest_path}: #{inspect(error)}")
+              {:error, "Patch failed: #{inspect(error)}"}
+          end
+
+        {:error, error} ->
+          Logger.error("Failed to create manifest #{manifest_path}: #{inspect(error)}")
+          {:error, "Create failed: #{inspect(error)}"}
+      end
     else
       nil ->
         Logger.error("No K8s connection found")
         {:error, "No K8s connection"}
 
       {:error, error} ->
-        Logger.error("Failed to apply manifest #{manifest_path}: #{inspect(error)}")
-        {:error, "Failed to apply #{manifest_path}: #{inspect(error)}"}
+        Logger.error("Failed to load manifest #{manifest_path}: #{inspect(error)}")
+        {:error, "Load failed: #{inspect(error)}"}
     end
   end
+
 
   defp write_latest_endpoint_to_metadata_db(app_name, deployment_name, app_host) do
     # Mirror structure used by Engine.Builder.update_app_metadata/3
