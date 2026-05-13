@@ -36,6 +36,7 @@ npm-debug.log
 /.elixir_ls/
 
 /minikube/
+/data/
 
 /.vscode
 

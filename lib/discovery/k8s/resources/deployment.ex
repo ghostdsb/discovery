@@ -9,7 +9,7 @@ defmodule Discovery.K8s.Resources.Deployment do
 
   @template_path "#{:code.priv_dir(:discovery)}/templates/deploy.yml"
 
-  @spec create_deployment(DeployUtils.app()) :: {:error, any()} | {:ok, map()}
+  @spec create_deployment(DeployUtils.App.t()) :: {:error, any()} | {:ok, map()}
   def create_deployment(app) do
     with {:ok, map} <- read_deployment_template(),
          {:ok, updated_map} <- update_deployment_map(map, app),
@@ -83,12 +83,12 @@ defmodule Discovery.K8s.Resources.Deployment do
     {:ok, map}
   end
 
-  @spec write_to_file(map, String.t()) :: :ok
+  @spec write_to_file(map, String.t()) :: :ok | {:error, any()}
   def write_to_file(map, location) do
     Utils.to_yml(map, location)
   end
 
-  @spec resource_file(DeployUtils.app() | DeployUtils.del_deployment()) ::
+  @spec resource_file(DeployUtils.App.t() | DeployUtils.del_deployment()) ::
           {:ok, String.t()} | {:error, String.t()}
   def resource_file(app) do
     case File.cwd() do

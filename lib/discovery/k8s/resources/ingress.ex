@@ -8,7 +8,7 @@ defmodule Discovery.K8s.Resources.Ingress do
 
   import Discovery.K8s.Config
 
-  @spec fetch_configuration(DeployUtils.app() | DeployUtils.del_deployment()) ::
+  @spec fetch_configuration(DeployUtils.App.t() | DeployUtils.del_deployment()) ::
           {:error, any()} | {:ok, {atom(), map()}}
   def fetch_configuration(app) do
     File.exists?("data/discovery/#{app.app_name}/ingress.yml")
@@ -19,7 +19,7 @@ defmodule Discovery.K8s.Resources.Ingress do
     end
   end
 
-  @spec add_ingress_path(map, DeployUtils.app()) :: map
+  @spec add_ingress_path(map, DeployUtils.App.t()) :: map
   def add_ingress_path(current_ingress_map, app) do
     new_path = %{
       "path" => "/#{app.uid}(/|$)(.*)",
@@ -54,7 +54,7 @@ defmodule Discovery.K8s.Resources.Ingress do
     new_path_list =
       all_paths
       |> Enum.filter(fn path_details ->
-        path_details["backend"]["serviceName"] != "#{app.app_name}-#{app.uid}"
+        get_in(path_details, ["backend", "service", "name"]) != "#{app.app_name}-#{app.uid}"
       end)
 
     map =
@@ -69,7 +69,7 @@ defmodule Discovery.K8s.Resources.Ingress do
     Utils.to_yml(map, location)
   end
 
-  @spec resource_file(DeployUtils.app() | DeployUtils.del_deployment()) ::
+  @spec resource_file(DeployUtils.App.t() | DeployUtils.del_deployment()) ::
           {:ok, String.t()} | {:error, String.t()}
   def resource_file(app) do
     case File.cwd() do
@@ -130,7 +130,7 @@ defmodule Discovery.K8s.Resources.Ingress do
     end
   end
 
-  @spec create_ingress_configuration(DeployUtils.app()) ::
+  @spec create_ingress_configuration(DeployUtils.App.t()) ::
           {:error, any()} | {:ok, {atom(), map()}}
   defp create_ingress_configuration(app) do
     with {:ok, map} <-

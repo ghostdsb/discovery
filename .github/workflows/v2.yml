@@ -6,10 +6,10 @@ on:
       env:
         description: "Environment"
         required: true
-        default: "develop"
+        default: "dev"
         type: choice
         options:
-          - develop
+          - dev
           - staging
   push:
     tags:
@@ -103,7 +103,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
   deploy_dev:
-    if: github.event.inputs.env == 'develop'
+    if: github.event.inputs.env == 'dev'
     needs: [build_and_push_image]
     runs-on: ubuntu-latest
     env:

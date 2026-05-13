@@ -1,0 +1,34 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: CI Deploy Test
+        run: |
+          # This simulates a call to the Discovery ci_deploy endpoint
+          # In a real scenario, you'd use curl to your Discovery service
+          echo "Simulating CI Deploy for app: my-game-server"
+          
+          # Example curl command (would be used in actual CI)
+          # curl -X POST https://discovery.internal/api/v1/deploy \
+          #   -H "Authorization: Bearer ${{ secrets.DISCOVERY_TOKEN }}" \
+          #   -H "Content-Type: application/json" \
+          #   -d '{
+          #     "app_name": "my-game-server",
+          #     "image": "my-registry.com/game:v1",
+          #     "environment": "production",
+          #     "config_ref": {
+          #       "git": {
+          #         "repo": "https://github.com/my-org/game-configs",
+          #         "path": "prod",
+          #         "rev": "main"
+          #       }
+          #     }
+          #   }'

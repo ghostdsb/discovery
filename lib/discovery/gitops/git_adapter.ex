@@ -148,6 +148,14 @@ defmodule Discovery.GitOps.GitAdapter do
 
   defp build_auth_url(url, token) do
     cond do
+      # Support local Gitea or other local Git servers
+      String.contains?(url, "localhost") or String.contains?(url, "gitea") ->
+        url
+
+      # Support filesystem-based mocks (file:// paths)
+      String.starts_with?(url, "file://") ->
+        url
+
       is_ssh_url(url) ->
         url
 
@@ -172,7 +180,7 @@ defmodule Discovery.GitOps.GitAdapter do
   end
 
   defp maybe_update_remote(repo_path, current_remote, desired_remote) do
-    if current_remote == desired_remote do
+    if current_remote == desired_remote or String.starts_with?(current_remote, "file://") do
       {:ok, :unchanged}
     else
       # Do not override SSH remotes

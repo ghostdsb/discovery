@@ -52,7 +52,6 @@ defmodule Discovery.GitOps.GitOpsManager do
 
   @doc """
   Syncs the local data/discovery folder to the GitOps repository.
-  This replaces the S3 upload functionality.
   """
   @spec sync_to_gitops(String.t()) :: {:ok, map()} | {:error, String.t()}
   def sync_to_gitops(commit_message \\ "Sync Discovery deployment state to GitOps") do
@@ -62,7 +61,7 @@ defmodule Discovery.GitOps.GitOpsManager do
   @doc """
   Syncs a specific app's deployment to the GitOps repository.
   """
-  # @spec sync_app_to_gitops(String.t(), String.t()) :: {:ok, map()} | {:error, String.t()}
+  @spec sync_app_to_gitops(String.t(), String.t() | nil) :: {:ok, map()} | {:error, String.t()}
   def sync_app_to_gitops(app_name, commit_message \\ nil) do
     message = commit_message || "Update #{app_name} deployment in GitOps"
     GenServer.call(__MODULE__, {:sync_app_to_gitops, app_name, message}, :infinity)
@@ -80,8 +79,8 @@ defmodule Discovery.GitOps.GitOpsManager do
   @doc """
   Syncs a specific app from data/discovery to the GitOps repository.
   """
-  # @spec sync_app_from_discovery_to_gitops(String.t(), String.t()) ::
-  #         {:ok, map()} | {:error, String.t()}
+  @spec sync_app_from_discovery_to_gitops(String.t(), String.t() | nil) ::
+          {:ok, map()} | {:error, String.t()}
   def sync_app_from_discovery_to_gitops(app_name, commit_message \\ nil) do
     message = commit_message || "Update #{app_name} from Discovery to GitOps"
     GenServer.call(__MODULE__, {:sync_app_from_discovery_to_gitops, app_name, message}, :infinity)
@@ -417,7 +416,8 @@ defmodule Discovery.GitOps.GitOpsManager do
              state.local_path,
              state
            ),
-         app_with_config <- Map.put(app, :config_map, config_data),
+         app_with_configs <- Map.put(app, :config_map, config_data),
+         app_with_config <- Discovery.Deploy.Utils.App.new(app_with_configs),
          :ok <- write_configmap_using_resource(app_dir, app_with_config, state),
          :ok <- write_deployment_using_resource(app_dir, app_with_config, state),
          :ok <- write_service_using_resource(app_dir, app_with_config, state),
@@ -499,24 +499,26 @@ defmodule Discovery.GitOps.GitOpsManager do
     alias Discovery.Engine.Builder
 
     with conn when not is_nil(conn) <- Builder.get_conn(),
-         {:ok, resource_map} <- K8s.Resource.from_file(manifest_path) do
-      case K8s.Client.create(resource_map) |> K8s.Client.run(conn) do
+         {:ok, resource_map} <- K8s.Resource.from_file(manifest_path),
+         operation <- K8s.Client.create(resource_map) do
+      case K8s.Client.run(conn, operation) do
         {:ok, _} ->
           Logger.info("Successfully created manifest: #{manifest_path}")
           :ok
 
-        {:error, %{"reason" => "AlreadyExists"}} ->
-          Logger.info("Manifest already exists, patching: #{manifest_path}")
+        #  Check this, need to find appropriate error struct @TODO
+        # {:error, %{"reason" => "AlreadyExists"}} ->
+        #   Logger.info("Manifest already exists, patching: #{manifest_path}")
 
-          case K8s.Client.patch(resource_map) |> K8s.Client.run(conn) do
-            {:ok, _} ->
-              Logger.info("Successfully patched manifest: #{manifest_path}")
-              :ok
+        #   case K8s.Client.patch(resource_map) |> K8s.Client.run(conn) do
+        #     {:ok, _} ->
+        #       Logger.info("Successfully patched manifest: #{manifest_path}")
+        #       :ok
 
-            {:error, error} ->
-              Logger.error("Failed to patch manifest #{manifest_path}: #{inspect(error)}")
-              {:error, "Patch failed: #{inspect(error)}"}
-          end
+        #     {:error, error} ->
+        #       Logger.error("Failed to patch manifest #{manifest_path}: #{inspect(error)}")
+        #       {:error, "Patch failed: #{inspect(error)}"}
+        #   end
 
         {:error, error} ->
           Logger.error("Failed to create manifest #{manifest_path}: #{inspect(error)}")
@@ -557,8 +559,8 @@ defmodule Discovery.GitOps.GitOpsManager do
   defp do_ci_status(deployment_name, state) do
     [app_name | _] = String.split(deployment_name, "-")
     app_dir = Path.join([state.local_path, "apps", app_name, deployment_name])
-    dep = Path.join(app_dir, "deployment.yaml")
-    cfg = Path.join(app_dir, "configmap.yaml")
+    dep = Path.join(app_dir, state.file_names.deployment)
+    cfg = Path.join(app_dir, state.file_names.configmap)
 
     {:ok,
      %{
@@ -574,6 +576,8 @@ defmodule Discovery.GitOps.GitOpsManager do
      }}
   end
 
+  @spec write_configmap_using_resource(String.t(), Discovery.Deploy.Utils.App.t(), map()) ::
+          :ok | {:error, String.t()}
   defp write_configmap_using_resource(app_dir, app, state) do
     with {:ok, configmap} <- ConfigMap.set_config_map(app),
          :ok <-
@@ -587,6 +591,8 @@ defmodule Discovery.GitOps.GitOpsManager do
     end
   end
 
+  @spec write_deployment_using_resource(String.t(), Discovery.Deploy.Utils.App.t(), map()) ::
+          :ok | {:error, String.t()}
   defp write_deployment_using_resource(app_dir, app, state) do
     with {:ok, deployment} <- Deployment.create_deployment(app),
          :ok <-
@@ -600,6 +606,8 @@ defmodule Discovery.GitOps.GitOpsManager do
     end
   end
 
+  @spec write_service_using_resource(String.t(), Discovery.Deploy.Utils.App.t(), map()) ::
+          :ok | {:error, String.t()}
   defp write_service_using_resource(app_dir, app, state) do
     with {:ok, service} <- Service.create_service(app),
          :ok <-
@@ -753,7 +761,6 @@ defmodule Discovery.GitOps.GitOpsManager do
 
     # Copy all files and folders from discovery to gitops
     copy_directory_contents(discovery_path, gitops_path)
-    :ok
   end
 
   defp copy_app_folder(app_discovery_path, app_gitops_path) do
@@ -763,23 +770,31 @@ defmodule Discovery.GitOps.GitOpsManager do
 
     # Copy app folder contents
     copy_directory_contents(app_discovery_path, app_gitops_path)
-    :ok
   end
 
   defp copy_directory_contents(source, destination) do
     case File.ls(source) do
       {:ok, items} ->
-        Enum.each(items, fn item ->
+        Enum.reduce_while(items, :ok, fn item, :ok ->
           source_path = Path.join(source, item)
           dest_path = Path.join(destination, item)
 
-          if File.dir?(source_path) do
-            # Copy directory recursively
-            File.mkdir_p!(dest_path)
-            copy_directory_contents(source_path, dest_path)
-          else
-            # Copy file
-            File.cp!(source_path, dest_path)
+          result =
+            if File.dir?(source_path) do
+              # Copy directory recursively
+              File.mkdir_p!(dest_path)
+              copy_directory_contents(source_path, dest_path)
+            else
+              # Copy file
+              case File.cp(source_path, dest_path) do
+                :ok -> :ok
+                {:error, reason} -> {:error, "Failed to copy file #{source_path}: #{reason}"}
+              end
+            end
+
+          case result do
+            :ok -> {:cont, :ok}
+            {:error, reason} -> {:halt, {:error, reason}}
           end
         end)
 
@@ -791,11 +806,31 @@ defmodule Discovery.GitOps.GitOpsManager do
 
   defp commit_and_push_changes(app_name, old_tag, new_tag, state, custom_message \\ nil) do
     message =
-      custom_message || RepoLayout.get_commit_message(app_name, old_tag || "none", new_tag)
+      cond do
+        custom_message ->
+          custom_message
+
+        app_name == "all" ->
+          "chore: sync all changes to GitOps"
+
+        true ->
+          RepoLayout.get_commit_message(app_name, old_tag || "none", new_tag || "none")
+      end
 
     if state.use_pr do
       # Create PR workflow
-      branch_name = "update-#{app_name}-#{new_tag}-#{:rand.uniform(10000)}"
+      branch_name =
+        "update-#{app_name}-#{new_tag || :rand.uniform(10000)}-#{:rand.uniform(10000)}"
+
+      pr_title =
+        if app_name == "all",
+          do: "Sync all changes",
+          else: RepoLayout.get_pr_title(app_name, new_tag || "none")
+
+      pr_body =
+        if app_name == "all",
+          do: "Syncing all changes from Discovery.",
+          else: RepoLayout.get_pr_body(app_name, old_tag || "none", new_tag || "none")
 
       with {:ok, _} <- GitAdapter.create_branch(state.local_path, branch_name),
            {:ok, _} <- GitAdapter.commit_changes(state.local_path, message),
@@ -804,8 +839,8 @@ defmodule Discovery.GitOps.GitOpsManager do
              GitAdapter.create_pull_request(
                state.repo_url,
                state.token,
-               RepoLayout.get_pr_title(app_name, new_tag),
-               RepoLayout.get_pr_body(app_name, old_tag || "none", new_tag),
+               pr_title,
+               pr_body,
                branch_name
              ) do
         {:ok, %{type: :pr, pr: pr_result}}

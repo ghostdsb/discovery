@@ -1,20 +1,41 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  localstack:
-    image: localstack/localstack
+  # 1. Discovery App
+  discovery:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
     ports:
-      - "127.0.0.1:4566:4566"            # LocalStack Gateway
-      - "127.0.0.1:4510-4559:4510-4559"  # external services port range
-      - "127.0.0.1:53:53"                # DNS config (only required for Pro)
-      - "127.0.0.1:53:53/udp"            # DNS config (only required for Pro)
-      - "127.0.0.1:443:443"              # LocalStack HTTPS Gateway (only required for Pro)
+      - "4000:4000"
     environment:
-      - SERVICES=s3
-      - DEBUG=${DEBUG-}
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - DEFAULT_REGION=ap-south-1
-      - AWS_ACCESS_KEY_ID=key
-      - AWS_SECRET_ACCESS_KEY=secret
+      - MIX_ENV=dev
+      - PORT=4000
+      - GIT_ACCESS_TOKEN=local_dev_token
+      - GIT_REPO_URL=http://gitea:3000/discovery/gitops.git
+    depends_on:
+      - gitea
     volumes:
-      - ./.aws:/docker-entrypoint-initaws.d
+      - .:/app
+      - /tmp/discovery-k8s:/tmp/discovery-k8s
+
+  # 2. Gitea (Local Git Server for GitOps testing)
+  gitea:
+    image: gitea/gitea:1.15.6
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea_data:/data
+
+  # 3. Redis (For idempotency persistence)
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  gitea_data:

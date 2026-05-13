@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-app
+  labels:
+    app: discovery-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: discovery-app
+  template:
+    metadata:
+      labels:
+        app: discovery-app
+    spec:
+      containers:
+      - name: discovery-app
+        image: discovery-app
+        ports:
+        - containerPort: 4000
+        env:
+        - name: MIX_ENV
+          value: "dev"
+        - name: PORT
+          value: "4000"
+        - name: CONNECTION_METHOD
+          value: "kube_config" # Updated Builder will handle this automatically now
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery-app
+spec:
+  selector:
+    app: discovery-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 4000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: discovery-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: discovery.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: discovery-app
+            port:
+              number: 80

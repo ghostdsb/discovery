@@ -5,7 +5,6 @@ defmodule Discovery.Deploy.Utils do
   alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Engine.Builder
   alias Discovery.Utils
-  alias Discovery.Storage.S3Uploader
 
   alias Discovery.K8s.Resources.{
     ConfigMap,
@@ -27,15 +26,33 @@ defmodule Discovery.Deploy.Utils do
           app_container_port: number()
         }
 
-  @type app :: %{
-          app_name: String.t(),
-          app_image: String.t(),
-          uid: String.t(),
-          config_map: map(),
-          app_host: String.t(),
-          app_target_port: number(),
-          app_container_port: number()
-        }
+  defmodule App do
+    defstruct(
+      app_name: "",
+      app_image: "",
+      uid: "",
+      config_map: %{},
+      app_host: "",
+      app_target_port: 1234,
+      app_container_port: 1234
+      # secret_refs: []
+    )
+
+    @type t :: %__MODULE__{
+            app_name: String.t(),
+            app_image: String.t(),
+            uid: String.t(),
+            config_map: map(),
+            app_host: String.t(),
+            app_target_port: number(),
+            app_container_port: number(),
+            # secret_refs: [String.t()]
+          }
+
+    def new(params) when is_map(params) do
+      struct(__MODULE__, params)
+    end
+  end
 
   @type del_deployment :: %{
           app_name: String.t(),
@@ -60,7 +77,7 @@ defmodule Discovery.Deploy.Utils do
   def create(deployment_details) do
     uid = Utils.get_uid()
 
-    app_details = %{
+    app_details = %DeployUtils.App{
       app_name: deployment_details.app_name,
       app_image: deployment_details.app_image,
       uid: uid,
@@ -104,7 +121,6 @@ defmodule Discovery.Deploy.Utils do
   @spec delete_app(binary) :: {:ok, [binary]} | {:error, atom, binary}
   def delete_app(app_name) do
     conn = Builder.get_conn()
-    bucket = Application.get_env(:discovery, :discovery_bucket)
 
     Ingress.get_ingress_services(conn, app_name)
     |> Enum.each(fn app ->
@@ -119,7 +135,6 @@ defmodule Discovery.Deploy.Utils do
     app_location = "data/discovery/#{app_name}"
 
     File.rm_rf(app_location)
-    |> then(fn _ -> S3Uploader.delete_content(bucket, app_location) end)
   end
 
   @spec create_namespace_directory :: :ok
@@ -133,14 +148,6 @@ defmodule Discovery.Deploy.Utils do
       namespace_template = File.read!("#{:code.priv_dir(:discovery)}/templates/namespace.yml")
       File.write!(namespace_file_location, namespace_template)
 
-      bucket = Application.get_env(:discovery, :discovery_bucket)
-
-      # uploads namespace to S3
-      S3Uploader.upload_file(namespace_file_location, bucket, namespace_file_location)
-
-      # downloads all files from S3, its ok if we rewrite namespace, by this we get the config files already
-      # uploaded to S3 by previous deployment
-      S3Uploader.download_contents(bucket)
       Utils.puts_warn("RUNNING NAMESPACE: discovery")
     end
   end
@@ -154,7 +161,7 @@ defmodule Discovery.Deploy.Utils do
     end
   end
 
-  @spec create_app_version_folder(app()) :: :ok | {:error, term()}
+  @spec create_app_version_folder(DeployUtils.App.t()) :: :ok | {:error, term()}
   defp create_app_version_folder(app) do
     File.mkdir("data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}")
   end
@@ -162,12 +169,10 @@ defmodule Discovery.Deploy.Utils do
   @spec delete_app_version_folder(del_deployment()) :: {:ok, list()} | {:error, String.t()}
   defp delete_app_version_folder(app) do
     app_version_location = "data/discovery/#{app.app_name}/#{app.app_name}-#{app.uid}"
-    bucket = Application.get_env(:discovery, :discovery_bucket)
 
     File.rm_rf(app_version_location)
     |> case do
       {:ok, list} ->
-        S3Uploader.delete_content(bucket, app_version_location)
         {:ok, list}
 
       {:error, reason, _} ->
@@ -175,7 +180,7 @@ defmodule Discovery.Deploy.Utils do
     end
   end
 
-  @spec create_ingress(app()) :: {:ok, map()} | {:error, term()}
+  @spec create_ingress(DeployUtils.App.t()) :: {:ok, map()} | {:error, term()}
   defp create_ingress(app) do
     with {:ok, {ingress_status, ingress}} <- Ingress.fetch_configuration(app),
          updated_ingress <- Ingress.add_ingress_path(ingress, app),
@@ -205,7 +210,7 @@ defmodule Discovery.Deploy.Utils do
     patch_resource(resource_location)
   end
 
-  @spec create_configmap(app()) :: {:ok, map()} | {:error, term()}
+  @spec create_configmap(DeployUtils.App.t()) :: {:ok, map()} | {:error, term()}
   defp create_configmap(app) do
     with {:ok, config_map} <- ConfigMap.set_config_map(app),
          {:ok, resource_location} <- ConfigMap.resource_file(app),
@@ -223,7 +228,7 @@ defmodule Discovery.Deploy.Utils do
     end
   end
 
-  @spec create_deployment(app()) :: {:ok, map()} | {:error, term()}
+  @spec create_deployment(DeployUtils.App.t()) :: {:ok, map()} | {:error, term()}
   defp create_deployment(app) do
     with {:ok, deployment} <- Deployment.create_deployment(app),
          {:ok, resource_location} <- Deployment.resource_file(app),
@@ -241,7 +246,7 @@ defmodule Discovery.Deploy.Utils do
     end
   end
 
-  @spec create_service(app()) :: {:ok, map()} | {:error, term()}
+  @spec create_service(DeployUtils.App.t()) :: {:ok, map()} | {:error, term()}
   defp create_service(app) do
     with {:ok, service} <- Service.create_service(app),
          {:ok, resource_location} <- Service.resource_file(app),

@@ -12,7 +12,7 @@ defmodule DiscoveryWeb.Router do
   end
 
   pipeline :api do
-    plug CORSPlug, origin: {DiscoveryWeb.Router, :cors_origins, []}
+    # plug CORSPlug, origin: {DiscoveryWeb.Router, :cors_origins, []}
     plug :accepts, ["json"]
   end
 
@@ -35,14 +35,14 @@ defmodule DiscoveryWeb.Router do
   # Other scopes may use custom stacks.
   scope "/api", DiscoveryWeb do
     pipe_through :api
-    get "/get-endpoint", EndpointController, :get_endpoint
+    get "/endpoint", EndpointController, :get_endpoint
 
     get "/apps", BaseController, :list_app
     get "/:app_name/deployments", BaseController, :list_app_deployments
-    post "/create-app", BaseController, :create_app
+    post "/app", BaseController, :create_app
     post "/deploy-build", BaseController, :deploy_build
-    delete "/delete-app", BaseController, :delete_app
-    delete "/delete-deployment", BaseController, :delete_deployment
+    delete "/app", BaseController, :delete_app
+    delete "/deployment", BaseController, :delete_deployment
 
     # GitOps endpoints
     post "/gitops/update-image", GitOpsController, :update_image

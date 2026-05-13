@@ -48,19 +48,16 @@ defmodule Discovery.Utils do
     IO.puts(IO.ANSI.format([:red_background, :black, inspect(term)]))
   end
 
-  alias Discovery.Storage.S3Uploader
-
   @doc """
-  On every write to the config file, we upload the file to S3
+  Saves a map to a YAML file.
   """
-  @spec to_yml(map, String.t()) :: :ok | {:error, String.t()}
+  @spec to_yml(map, String.t()) :: :ok | {:error, any()}
   def to_yml(map, location) do
     yml = Yamlix.dump(map, false)
 
     with {:ok, io} <- File.open(location, [:write, :utf8]),
-    :ok <- IO.write(io, yml),
-    bucket <- Application.get_env(:discovery, :discovery_bucket) do
-      S3Uploader.upload_file(location, bucket, location)
+         :ok <- IO.write(io, yml) do
+      File.close(io)
     end
   end
 end

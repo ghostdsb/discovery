@@ -1,4 +1,4 @@
-ARG MIX_ENV="develop"
+ARG MIX_ENV="dev"
 
 FROM hexpm/elixir:1.12.2-erlang-24.0.5-alpine-3.14.0 as build
 

@@ -7,7 +7,7 @@ defmodule Discovery.K8s.Resources.Service do
 
   import Discovery.K8s.Config
 
-  @spec create_service(DeployUtils.app()) :: {:error, any()} | {:ok, map()}
+  @spec create_service(DeployUtils.App.t()) :: {:error, any()} | {:ok, map()}
   def create_service(app) do
     with {:ok, map} <-
            "#{:code.priv_dir(:discovery)}/templates/service.yml"
@@ -26,12 +26,12 @@ defmodule Discovery.K8s.Resources.Service do
     end
   end
 
-  @spec write_to_file(map, String.t()) :: :ok
+  @spec write_to_file(map, String.t()) :: :ok | {:error, any()}
   def write_to_file(map, location) do
     Utils.to_yml(map, location)
   end
 
-  @spec resource_file(DeployUtils.app() | DeployUtils.del_deployment()) ::
+  @spec resource_file(DeployUtils.App.t() | DeployUtils.del_deployment()) ::
           {:ok, String.t()} | {:error, String.t()}
   def resource_file(app) do
     case File.cwd() do

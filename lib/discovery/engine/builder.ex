@@ -66,6 +66,7 @@ defmodule Discovery.Engine.Builder do
   @impl true
   def handle_info("fetch_deployment_data", state) do
     state = %{state | deployment_info: %{}}
+    # state |> IO.inspect(label: "State for fetch deployment data")
     updated_state = build_metadata(state)
     Process.send_after(self(), "fetch_deployment_data", @k8_fetch_interval)
     {:noreply, updated_state}
@@ -76,34 +77,23 @@ defmodule Discovery.Engine.Builder do
   # Connects to Kubernetes
   @spec connect_to_k8() :: any()
   defp connect_to_k8 do
-    Application.get_env(:discovery, :connection_method)
-    |> generate_configuration()
-    |> case do
-      {:ok, conn_ref} ->
-        Utils.puts_success("K8 connection success")
-        Logger.info("K8 connection success")
-        conn_ref
-
-      {:error, reason} ->
-        Utils.puts_error("Error while K8 conneciton due to #{inspect(reason)}")
-        Logger.info("Error while K8 conneciton due to #{inspect(reason)}")
-        # V2: Add connection retry for prod case
-        nil
-    end
-  end
-
-  @spec generate_configuration(String.t()) ::
-          {:ok, any()} | {:error, :enoent | K8s.Conn.Error.t() | String.t()}
-  defp generate_configuration(method) do
-    case method do
-      :service_account ->
-        K8s.Conn.from_service_account()
-
-      :kube_config ->
-        K8s.Conn.from_file("~/.kube/config", context: "minikube")
+    # Try service account first (in-cluster)
+    case K8s.Conn.from_service_account() do
+      {:ok, conn} ->
+        Logger.info("K8 connection success (In-Cluster)")
+        conn
 
       _ ->
-        {:error, "connection method unavailable"}
+        # Fallback to local kubeconfig
+        case K8s.Conn.from_file("~/.kube/config") do
+          {:ok, conn} ->
+            Logger.info("K8 connection success (Local Kubeconfig)")
+            conn
+
+          {:error, reason} ->
+            Logger.error("Error while K8 connection: #{inspect(reason)}")
+            nil
+        end
     end
   end
 
