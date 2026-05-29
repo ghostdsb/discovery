@@ -1,15 +1,15 @@
-defmodule Discovery.GitOps.GitOpsManager do
+defmodule Discovery.Orchestrator.Pipeline do
   @moduledoc """
-  Main GitOps manager that orchestrates Git operations, image updates and repository management.
+  Main GitOps orchestrator that coordinates Git operations, image updates and repository management.
   Acts as the primary interface for GitOps operations in Discovery.
   """
 
   use GenServer
   require Logger
 
-  alias Discovery.GitOps.{GitAdapter, RepoLayout, ImageUpdater, ConfigFetcher}
-  alias Discovery.K8s.Resources.{ConfigMap, Deployment, Ingress, Service}
-  alias Discovery.Engine.Builder
+  alias Discovery.Git.{Client, Layout, ImagePatcher, ConfigFetcher}
+  alias Discovery.Kubernetes.Manifests.{ConfigMap, Deployment, Ingress, Service}
+  alias Discovery.Kubernetes.Client, as: K8sClient
 
   @root_dir "data/discovery"
 
@@ -123,7 +123,7 @@ defmodule Discovery.GitOps.GitOpsManager do
   @impl true
   def init(opts) do
     git_access_token = Application.get_env(:discovery, :git_access_token)
-    repo_url = Keyword.get(opts, :repo_url, "https://github.com/gamezop/discovery-k8s.git")
+    repo_url = Keyword.get(opts, :repo_url, "https://github.com/discovery/discovery-k8s.git")
     token = Keyword.get(opts, :token, git_access_token)
     local_path = Keyword.get(opts, :local_path, "/tmp/discovery-k8s")
     use_pr = Keyword.get(opts, :use_pr, false)
@@ -157,7 +157,7 @@ defmodule Discovery.GitOps.GitOpsManager do
       file_names: file_names
     }
 
-    Logger.info("GitOpsManager initialized with repo: #{repo_url} at #{local_path}")
+    Logger.info("Pipeline orchestrator initialized with repo: #{repo_url} at #{local_path}")
 
     # Initialize the local directory structure
     File.mkdir_p!(local_path)
@@ -234,9 +234,9 @@ defmodule Discovery.GitOps.GitOpsManager do
   defp do_update_app_image(app_name, new_tag, environment, state) do
     with {:ok, _} <- ensure_repo_cloned(state),
          {:ok, old_tag} <-
-           ImageUpdater.get_current_image_tag(state.local_path, app_name, environment),
+           ImagePatcher.get_current_image_tag(state.local_path, app_name, environment),
          {:ok, _} <-
-           ImageUpdater.update_image_tag(state.local_path, app_name, new_tag, environment),
+           ImagePatcher.update_image_tag(state.local_path, app_name, new_tag, environment),
          {:ok, commit_result} <- commit_and_push_changes(app_name, old_tag, new_tag, state) do
       Logger.info("Successfully updated #{app_name} from #{old_tag} to #{new_tag}")
 
@@ -257,7 +257,7 @@ defmodule Discovery.GitOps.GitOpsManager do
   defp do_create_app(app_name, image_name, environment, state) do
     with {:ok, _} <- ensure_repo_cloned(state),
          {:ok, _} <-
-           ImageUpdater.create_deployment_manifest(
+           ImagePatcher.create_deployment_manifest(
              state.local_path,
              app_name,
              image_name,
@@ -282,7 +282,7 @@ defmodule Discovery.GitOps.GitOpsManager do
 
   defp do_list_apps(state) do
     with {:ok, _} <- ensure_repo_cloned(state) do
-      apps = RepoLayout.list_apps(state.local_path)
+      apps = Layout.list_apps(state.local_path)
       {:ok, apps}
     else
       {:error, reason} ->
@@ -293,7 +293,7 @@ defmodule Discovery.GitOps.GitOpsManager do
 
   defp do_get_app_image_tag(app_name, environment, state) do
     with {:ok, _} <- ensure_repo_cloned(state) do
-      ImageUpdater.get_current_image_tag(state.local_path, app_name, environment)
+      ImagePatcher.get_current_image_tag(state.local_path, app_name, environment)
     else
       {:error, reason} ->
         Logger.error("Failed to get app image tag: #{reason}")
@@ -485,6 +485,23 @@ defmodule Discovery.GitOps.GitOpsManager do
         state.file_names.ingress
       ])
 
+    ingress_path =
+      if File.exists?(ingress_path),
+        do: ingress_path,
+        else:
+          Path.join([
+            state.local_path,
+            "apps",
+            app_dir |> Path.split() |> List.last() |> Path.dirname(),
+            state.file_names.ingress
+          ])
+
+    # Fallback to simple local path checks
+    ingress_path =
+      if File.exists?(ingress_path),
+        do: ingress_path,
+        else: Path.join([app_dir, state.file_names.ingress])
+
     manifests = if File.exists?(ingress_path), do: manifests ++ [ingress_path], else: manifests
 
     results = Enum.map(manifests, &apply_single_manifest/1)
@@ -496,47 +513,36 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp apply_single_manifest(manifest_path) do
-    alias Discovery.Engine.Builder
+    case K8sClient.get_conn() do
+      :stub_connection ->
+        Logger.info("SANDBOX: Applied manifest successfully (Stub Mode): #{manifest_path}")
+        :ok
 
-    with conn when not is_nil(conn) <- Builder.get_conn(),
-         {:ok, resource_map} <- K8s.Resource.from_file(manifest_path),
-         operation <- K8s.Client.create(resource_map) do
-      case K8s.Client.run(conn, operation) do
-        {:ok, _} ->
-          Logger.info("Successfully created manifest: #{manifest_path}")
-          :ok
-
-        #  Check this, need to find appropriate error struct @TODO
-        # {:error, %{"reason" => "AlreadyExists"}} ->
-        #   Logger.info("Manifest already exists, patching: #{manifest_path}")
-
-        #   case K8s.Client.patch(resource_map) |> K8s.Client.run(conn) do
-        #     {:ok, _} ->
-        #       Logger.info("Successfully patched manifest: #{manifest_path}")
-        #       :ok
-
-        #     {:error, error} ->
-        #       Logger.error("Failed to patch manifest #{manifest_path}: #{inspect(error)}")
-        #       {:error, "Patch failed: #{inspect(error)}"}
-        #   end
-
-        {:error, error} ->
-          Logger.error("Failed to create manifest #{manifest_path}: #{inspect(error)}")
-          {:error, "Create failed: #{inspect(error)}"}
-      end
-    else
       nil ->
         Logger.error("No K8s connection found")
         {:error, "No K8s connection"}
 
-      {:error, error} ->
-        Logger.error("Failed to load manifest #{manifest_path}: #{inspect(error)}")
-        {:error, "Load failed: #{inspect(error)}"}
+      conn ->
+        with {:ok, resource_map} <- K8s.Resource.from_file(manifest_path),
+             operation <- K8s.Client.create(resource_map) do
+          case K8s.Client.run(conn, operation) do
+            {:ok, _} ->
+              Logger.info("Successfully created manifest: #{manifest_path}")
+              :ok
+
+            {:error, error} ->
+              Logger.error("Failed to create manifest #{manifest_path}: #{inspect(error)}")
+              {:error, "Create failed: #{inspect(error)}"}
+          end
+        else
+          {:error, error} ->
+            Logger.error("Failed to load manifest #{manifest_path}: #{inspect(error)}")
+            {:error, "Load failed: #{inspect(error)}"}
+        end
     end
   end
 
   defp write_latest_endpoint_to_metadata_db(app_name, deployment_name, app_host) do
-    # Mirror structure used by Engine.Builder.update_app_metadata/3
     endpoint = computed_endpoint(app_host, deployment_name)
     now = DateTime.utc_now()
 
@@ -557,7 +563,8 @@ defmodule Discovery.GitOps.GitOpsManager do
   end
 
   defp do_ci_status(deployment_name, state) do
-    [app_name | _] = String.split(deployment_name, "-")
+    parts = String.split(deployment_name, "-")
+    app_name = Enum.slice(parts, 0..-2//1) |> Enum.join("-")
     app_dir = Path.join([state.local_path, "apps", app_name, deployment_name])
     dep = Path.join(app_dir, state.file_names.deployment)
     cfg = Path.join(app_dir, state.file_names.configmap)
@@ -717,7 +724,7 @@ defmodule Discovery.GitOps.GitOpsManager do
     cond do
       File.exists?(git_dir) ->
         # Directory is a git repo; try pulling latest. If pull reveals repo is broken, reclone.
-        case GitAdapter.run_git_cmd(state.local_path, ["pull", "origin", "main"]) do
+        case Client.run_git_cmd(state.local_path, ["pull", "origin", "main"]) do
           {:ok, _} ->
             {:ok, :already_cloned}
 
@@ -727,7 +734,7 @@ defmodule Discovery.GitOps.GitOpsManager do
             if String.contains?(String.downcase(reason), "not a git repository") do
               Logger.warning("Local path is not a valid git repo; recloning...")
               File.rm_rf(state.local_path)
-              GitAdapter.clone_repo(state.repo_url, state.local_path, state.token)
+              Client.clone_repo(state.repo_url, state.local_path, state.token)
             else
               {:ok, :already_cloned}
             end
@@ -737,11 +744,11 @@ defmodule Discovery.GitOps.GitOpsManager do
         # Path exists but is not a git repo; clean and clone afresh.
         Logger.warning("Local path exists without .git; recloning repo at #{state.local_path}")
         File.rm_rf(state.local_path)
-        GitAdapter.clone_repo(state.repo_url, state.local_path, state.token)
+        Client.clone_repo(state.repo_url, state.local_path, state.token)
 
       true ->
         # Path doesn't exist; fresh clone
-        GitAdapter.clone_repo(state.repo_url, state.local_path, state.token)
+        Client.clone_repo(state.repo_url, state.local_path, state.token)
     end
   end
 
@@ -814,7 +821,7 @@ defmodule Discovery.GitOps.GitOpsManager do
           "chore: sync all changes to GitOps"
 
         true ->
-          RepoLayout.get_commit_message(app_name, old_tag || "none", new_tag || "none")
+          Layout.get_commit_message(app_name, old_tag || "none", new_tag || "none")
       end
 
     if state.use_pr do
@@ -825,18 +832,18 @@ defmodule Discovery.GitOps.GitOpsManager do
       pr_title =
         if app_name == "all",
           do: "Sync all changes",
-          else: RepoLayout.get_pr_title(app_name, new_tag || "none")
+          else: Layout.get_pr_title(app_name, new_tag || "none")
 
       pr_body =
         if app_name == "all",
           do: "Syncing all changes from Discovery.",
-          else: RepoLayout.get_pr_body(app_name, old_tag || "none", new_tag || "none")
+          else: Layout.get_pr_body(app_name, old_tag || "none", new_tag || "none")
 
-      with {:ok, _} <- GitAdapter.create_branch(state.local_path, branch_name),
-           {:ok, _} <- GitAdapter.commit_changes(state.local_path, message),
-           {:ok, _} <- GitAdapter.push_changes(state.local_path, branch_name, state.token),
+      with {:ok, _} <- Client.create_branch(state.local_path, branch_name),
+           {:ok, _} <- Client.commit_changes(state.local_path, message),
+           {:ok, _} <- Client.push_changes(state.local_path, branch_name, state.token),
            {:ok, pr_result} <-
-             GitAdapter.create_pull_request(
+             Client.create_pull_request(
                state.repo_url,
                state.token,
                pr_title,
@@ -847,8 +854,8 @@ defmodule Discovery.GitOps.GitOpsManager do
       end
     else
       # Direct push to main
-      with {:ok, _} <- GitAdapter.commit_changes(state.local_path, message),
-           {:ok, _} <- GitAdapter.push_changes(state.local_path, "main", state.token) do
+      with {:ok, _} <- Client.commit_changes(state.local_path, message),
+           {:ok, _} <- Client.push_changes(state.local_path, "main", state.token) do
         {:ok, %{type: :commit, message: message}}
       end
     end

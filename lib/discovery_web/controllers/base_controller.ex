@@ -1,7 +1,7 @@
 defmodule DiscoveryWeb.BaseController do
   use DiscoveryWeb, :controller
 
-  alias Discovery.Bridge.Utils, as: BridgeUtils
+  alias Discovery.Dashboard.Queries, as: DashboardQueries
 
   def ping(conn, _params) do
     json(conn, "pong from discovery: v#{Application.spec(:discovery, :vsn)}")
@@ -9,7 +9,7 @@ defmodule DiscoveryWeb.BaseController do
 
   @spec list_app(Plug.Conn.t(), any) :: Plug.Conn.t()
   def list_app(conn, _params) do
-    app_list = BridgeUtils.get_apps()
+    app_list = DashboardQueries.get_apps()
     json(conn, %{apps: app_list})
   end
 
@@ -19,7 +19,7 @@ defmodule DiscoveryWeb.BaseController do
   @spec list_app_deployments(any, map) :: Plug.Conn.t()
   def list_app_deployments(conn, params) do
     with {:ok, params} <- Tarams.cast(params, @list_app_deployments_params),
-         deployment_data <- BridgeUtils.get_deployment_data(params.app_name) do
+         deployment_data <- DashboardQueries.get_deployment_data(params.app_name) do
       json(conn, %{deployment_data: deployment_data})
     else
       {:error, _} -> json(put_status(conn, 400), "error")
@@ -32,7 +32,7 @@ defmodule DiscoveryWeb.BaseController do
   @spec create_app(Plug.Conn.t(), map) :: Plug.Conn.t()
   def create_app(conn, params) do
     with {:ok, params} <- Tarams.cast(params, @create_app_params),
-         {:ok, :app_inserted} <- BridgeUtils.create_app(params.app_name) do
+         {:ok, :app_inserted} <- DashboardQueries.create_app(params.app_name) do
       json(conn, params)
     else
       {:error, reason} -> json(put_status(conn, 400), reason)
@@ -50,7 +50,7 @@ defmodule DiscoveryWeb.BaseController do
   @spec deploy_build(Plug.Conn.t(), map) :: Plug.Conn.t()
   def deploy_build(conn, params) do
     with {:ok, params} <- Tarams.cast(params, @deploy_build_params),
-         {:ok, response} <- BridgeUtils.create_deployment(params) do
+         {:ok, response} <- DashboardQueries.create_deployment(params) do
       json(conn, response)
     else
       {:error, reason} -> json(put_status(conn, 400), reason)
@@ -63,7 +63,7 @@ defmodule DiscoveryWeb.BaseController do
   @spec delete_app(Plug.Conn.t(), map) :: Plug.Conn.t()
   def delete_app(conn, params) do
     with {:ok, params} <- Tarams.cast(params, @delete_app_params),
-         {:ok, _} <- BridgeUtils.delete_app(params.app_name) do
+         {:ok, _} <- DashboardQueries.delete_app(params.app_name) do
       json(conn, params)
     else
       {:error, _} ->
@@ -81,7 +81,7 @@ defmodule DiscoveryWeb.BaseController do
     }
 
     with {:ok, params} <- Tarams.cast(params, delete_deployment_params),
-         {:ok, _} <- BridgeUtils.delete_deployment(params.deployment_name) do
+         {:ok, _} <- DashboardQueries.delete_deployment(params.deployment_name) do
       json(conn, params)
     else
       {:error, _} -> json(put_status(conn, 400), "error")
@@ -89,10 +89,12 @@ defmodule DiscoveryWeb.BaseController do
   end
 
   defp validate_depl_name(deployment_name) do
-    if deployment_name |> String.split("-") |> length() == 2 do
-      {:ok, deployment_name}
-    else
-      {:error, "validate deployment name: appname-uid"}
+    case String.split(deployment_name, "-") do
+      parts when length(parts) >= 2 ->
+        {:ok, deployment_name}
+
+      _ ->
+        {:error, "validate deployment name: appname-uid"}
     end
   end
 end

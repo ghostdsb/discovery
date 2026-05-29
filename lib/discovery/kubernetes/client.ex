@@ -1,4 +1,4 @@
-defmodule Discovery.Engine.Builder do
+defmodule Discovery.Kubernetes.Client do
   @moduledoc """
   Polls k8 and process the deployment data from k8s and push to ETS, as a kv pair,
   where key will be the app id and value will be the metadata of app.
@@ -6,7 +6,7 @@ defmodule Discovery.Engine.Builder do
 
   require Logger
 
-  alias Discovery.K8s.Resources.{
+  alias Discovery.Kubernetes.Manifests.{
     Deployment,
     Ingress
   }
@@ -77,22 +77,29 @@ defmodule Discovery.Engine.Builder do
   # Connects to Kubernetes
   @spec connect_to_k8() :: any()
   defp connect_to_k8 do
-    # Try service account first (in-cluster)
-    case K8s.Conn.from_service_account() do
-      {:ok, conn} ->
-        Logger.info("K8 connection success (In-Cluster)")
-        conn
+    case Application.get_env(:discovery, :connection_method) do
+      :stub ->
+        Logger.info("K8 connection running in :stub sandbox mode")
+        :stub_connection
 
       _ ->
-        # Fallback to local kubeconfig
-        case K8s.Conn.from_file("~/.kube/config") do
+        # Try service account first (in-cluster)
+        case K8s.Conn.from_service_account() do
           {:ok, conn} ->
-            Logger.info("K8 connection success (Local Kubeconfig)")
+            Logger.info("K8 connection success (In-Cluster)")
             conn
 
-          {:error, reason} ->
-            Logger.error("Error while K8 connection: #{inspect(reason)}")
-            nil
+          _ ->
+            # Fallback to local kubeconfig
+            case K8s.Conn.from_file("~/.kube/config") do
+              {:ok, conn} ->
+                Logger.info("K8 connection success (Local Kubeconfig)")
+                conn
+
+              {:error, reason} ->
+                Logger.error("Error while K8 connection: #{inspect(reason)}")
+                nil
+            end
         end
     end
   end
@@ -100,6 +107,11 @@ defmodule Discovery.Engine.Builder do
   # By the end, metadata of apps will be updated in metadata_db (ETS).
   @spec build_metadata(__MODULE__.t()) :: any()
   defp build_metadata(%{conn_ref: nil} = state), do: state
+
+  defp build_metadata(%{conn_ref: :stub_connection} = state) do
+    fetch_stub_deployment_list()
+    |> update_metadata_db(state)
+  end
 
   defp build_metadata(state) do
     fetch_deployment_list(state.conn_ref)
@@ -120,6 +132,102 @@ defmodule Discovery.Engine.Builder do
         IO.puts("Error on fetching deployment, due to #{inspect(reason)}")
         nil
     end
+  end
+
+  defp fetch_stub_deployment_list do
+    root = "data/discovery"
+
+    if File.dir?(root) do
+      File.ls!(root)
+      |> Enum.filter(fn name -> File.dir?(Path.join(root, name)) and name != "namespace" end)
+      |> Enum.flat_map(fn app_name ->
+        app_dir = Path.join(root, app_name)
+
+        File.ls!(app_dir)
+        |> Enum.filter(fn item ->
+          File.dir?(Path.join(app_dir, item)) and String.contains?(item, "#{app_name}-")
+        end)
+        |> Enum.map(fn deployment_name ->
+          deployment_dir = Path.join(app_dir, deployment_name)
+          deploy_yaml_path = Path.join(deployment_dir, "deploy.yml")
+
+          # Fallback to config files in pipeline working dir
+          deploy_yaml_path =
+            if File.exists?(deploy_yaml_path),
+              do: deploy_yaml_path,
+              else: Path.join(deployment_dir, "deployment.yml")
+
+          # Read image & replicas from the yml file
+          case File.exists?(deploy_yaml_path) do
+            true ->
+              case YamlElixir.read_from_file(deploy_yaml_path, atoms: false) do
+                {:ok, deploy_map} ->
+                  container =
+                    get_in(deploy_map, ["spec", "template", "spec", "containers"]) |> List.first() ||
+                      %{"image" => "stub:latest"}
+
+                  replicas = get_in(deploy_map, ["spec", "replicas"]) || 1
+
+                  %{
+                    "metadata" => %{
+                      "name" => deployment_name,
+                      "annotations" => %{"app_id" => app_name}
+                    },
+                    "spec" => %{
+                      "template" => %{
+                        "spec" => %{
+                          "containers" => [container]
+                        }
+                      }
+                    },
+                    "status" => %{
+                      "replicas" => replicas,
+                      "conditions" => [
+                        %{
+                          "lastUpdateTime" => DateTime.utc_now() |> DateTime.to_iso8601(),
+                          "type" => "Progressing"
+                        }
+                      ]
+                    }
+                  }
+
+                _ ->
+                  build_stub_fallback(app_name, deployment_name)
+              end
+
+            false ->
+              build_stub_fallback(app_name, deployment_name)
+          end
+        end)
+      end)
+    else
+      []
+    end
+  end
+
+  defp build_stub_fallback(app_name, deployment_name) do
+    %{
+      "metadata" => %{
+        "name" => deployment_name,
+        "annotations" => %{"app_id" => app_name}
+      },
+      "spec" => %{
+        "template" => %{
+          "spec" => %{
+            "containers" => [%{"image" => "stub:latest"}]
+          }
+        }
+      },
+      "status" => %{
+        "replicas" => 1,
+        "conditions" => [
+          %{
+            "lastUpdateTime" => DateTime.utc_now() |> DateTime.to_iso8601(),
+            "type" => "Progressing"
+          }
+        ]
+      }
+    }
   end
 
   # @docp """
@@ -190,23 +298,49 @@ defmodule Discovery.Engine.Builder do
     |> List.first()
   end
 
-  @spec get_deployment_url(String.t(), K8s.Conn.t()) :: String.t()
+  @spec get_deployment_url(String.t(), any()) :: String.t()
   defp get_deployment_url(app_deployment_name, conn) do
-    # app deployment names are always in a format [app_id]-[serial-id]
-    case app_deployment_name |> String.split("-") do
-      [app_id, path] ->
-        Ingress.current_k8s_ingress_configuration(app_id, conn)
-        |> case do
+    parts = String.split(app_deployment_name, "-")
+
+    case parts do
+      parts when length(parts) >= 2 ->
+        path = List.last(parts)
+        app_id = Enum.slice(parts, 0..-2//1) |> Enum.join("-")
+        resolve_ingress_url(app_id, path, conn)
+
+      _ ->
+        ""
+    end
+  end
+
+  defp resolve_ingress_url(app_id, path, :stub_connection) do
+    ingress_path = "data/discovery/#{app_id}/ingress.yml"
+
+    case File.exists?(ingress_path) do
+      true ->
+        case YamlElixir.read_from_file(ingress_path, atoms: false) do
           {:ok, ingress_data} ->
             [rule | _rules] = ingress_data["spec"]["rules"]
             "#{rule["host"]}/#{path}"
 
-          {:error, reason} ->
-            IO.puts("Error on fetching ingress, due to #{inspect(reason)}")
-            ""
+          _ ->
+            "#{app_id}.example.com/#{path}"
         end
 
-      _ ->
+      false ->
+        "#{app_id}.example.com/#{path}"
+    end
+  end
+
+  defp resolve_ingress_url(app_id, path, conn) do
+    Ingress.current_k8s_ingress_configuration(app_id, conn)
+    |> case do
+      {:ok, ingress_data} ->
+        [rule | _rules] = ingress_data["spec"]["rules"]
+        "#{rule["host"]}/#{path}"
+
+      {:error, reason} ->
+        IO.puts("Error on fetching ingress, due to #{inspect(reason)}")
         ""
     end
   end

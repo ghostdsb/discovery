@@ -1,6 +1,6 @@
 defmodule DiscoveryWeb.CiController do
   use DiscoveryWeb, :controller
-  alias Discovery.GitOps.GitOpsManager
+  alias Discovery.Orchestrator.Pipeline
 
   @deploy_params %{
     app_name: [type: :string, required: true],
@@ -14,7 +14,7 @@ defmodule DiscoveryWeb.CiController do
   def deploy(conn, params) do
     with {:ok, params} <- Tarams.cast(params, @deploy_params),
          {:ok, result} <-
-           GitOpsManager.ci_deploy(
+           Pipeline.ci_deploy(
              params.app_name,
              params.image,
              params.environment,
@@ -35,7 +35,7 @@ defmodule DiscoveryWeb.CiController do
   @spec status(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def status(conn, params) do
     with {:ok, params} <- Tarams.cast(params, @status_params),
-         {:ok, result} <- GitOpsManager.ci_status(params.deployment_name) do
+         {:ok, result} <- Pipeline.ci_status(params.deployment_name) do
       json(conn, %{success: true, data: result})
     else
       {:error, reason} ->

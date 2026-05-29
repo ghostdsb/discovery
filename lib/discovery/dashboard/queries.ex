@@ -1,9 +1,9 @@
-defmodule Discovery.Bridge.Utils do
+defmodule Discovery.Dashboard.Queries do
   @moduledoc """
   Manages the communications of liveview with the backend.
   """
   alias Discovery.K8s.DeploymentController
-  alias Discovery.Deploy.Manager
+  alias Discovery.Orchestrator.Controller
   alias Discovery.Deploy.Utils, as: DeployUtils
 
   @doc """
@@ -38,7 +38,7 @@ defmodule Discovery.Bridge.Utils do
       %{
         app_name: app_name,
         deployments: deployment_count,
-        url: "#{Application.get_env(:discovery, :base_url)}/api/get-endpoint?app_name=#{app_name}"
+        url: "#{Application.get_env(:discovery, :base_url)}/api/endpoint?app_name=#{app_name}"
       }
     end)
   end
@@ -75,7 +75,7 @@ defmodule Discovery.Bridge.Utils do
   @spec create_deployment(DeployUtils.t()) :: {:ok, term()} | {:error, term()}
   def create_deployment(deployment_details) do
     deployment_details
-    |> Manager.create()
+    |> Controller.create()
   end
 
   @doc """
@@ -85,10 +85,10 @@ defmodule Discovery.Bridge.Utils do
   """
   @spec delete_deployment(String.t()) :: {:ok, term()} | {:error, term()}
   def delete_deployment(deployment_name) do
-    [app_name, uid] =
-      deployment_name
-      |> String.split("-")
+    parts = String.split(deployment_name, "-")
+    uid = List.last(parts)
+    app_name = Enum.slice(parts, 0..-2//1) |> Enum.join("-")
 
-    Manager.delete(%{app_name: app_name, uid: uid})
+    Controller.delete(%{app_name: app_name, uid: uid})
   end
 end

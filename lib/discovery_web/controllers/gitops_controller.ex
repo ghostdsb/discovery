@@ -1,6 +1,6 @@
 defmodule DiscoveryWeb.GitOpsController do
   use DiscoveryWeb, :controller
-  alias Discovery.GitOps.GitOpsManager
+  alias Discovery.Orchestrator.Pipeline
 
   @doc """
   Updates an app's image tag in the GitOps repository.
@@ -15,7 +15,7 @@ defmodule DiscoveryWeb.GitOpsController do
 
     with {:ok, params} <- Tarams.cast(params, update_params),
          {:ok, result} <-
-           GitOpsManager.update_app_image(params.app_name, params.new_tag, params.environment) do
+           Pipeline.update_app_image(params.app_name, params.new_tag, params.environment) do
       json(conn, %{
         success: true,
         message: "Successfully updated #{params.app_name} to #{params.new_tag}",
@@ -45,7 +45,7 @@ defmodule DiscoveryWeb.GitOpsController do
 
     with {:ok, params} <- Tarams.cast(params, create_params),
          {:ok, result} <-
-           GitOpsManager.create_app(params.app_name, params.image_name, params.environment) do
+           Pipeline.create_app(params.app_name, params.image_name, params.environment) do
       json(conn, %{
         success: true,
         message: "Successfully created app #{params.app_name}",
@@ -67,7 +67,7 @@ defmodule DiscoveryWeb.GitOpsController do
   """
   @spec list_apps(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def list_apps(conn, _params) do
-    case GitOpsManager.list_apps() do
+    case Pipeline.list_apps() do
       {:ok, apps} ->
         json(conn, %{
           success: true,
@@ -95,7 +95,7 @@ defmodule DiscoveryWeb.GitOpsController do
     }
 
     with {:ok, params} <- Tarams.cast(params, tag_params),
-         {:ok, tag} <- GitOpsManager.get_app_image_tag(params.app_name, params.environment) do
+         {:ok, tag} <- Pipeline.get_app_image_tag(params.app_name, params.environment) do
       json(conn, %{
         success: true,
         data: %{
@@ -125,7 +125,7 @@ defmodule DiscoveryWeb.GitOpsController do
     }
 
     with {:ok, params} <- Tarams.cast(params, sync_params),
-         {:ok, result} <- GitOpsManager.sync_to_gitops(params.commit_message) do
+         {:ok, result} <- Pipeline.sync_to_gitops(params.commit_message) do
       json(conn, %{
         success: true,
         message: "Successfully synced to GitOps",
@@ -153,7 +153,7 @@ defmodule DiscoveryWeb.GitOpsController do
     }
 
     with {:ok, params} <- Tarams.cast(params, sync_params),
-         {:ok, result} <- GitOpsManager.sync_app_to_gitops(params.app_name, params.commit_message) do
+         {:ok, result} <- Pipeline.sync_app_to_gitops(params.app_name, params.commit_message) do
       json(conn, %{
         success: true,
         message: "Successfully synced #{params.app_name} to GitOps",
@@ -180,7 +180,7 @@ defmodule DiscoveryWeb.GitOpsController do
     }
 
     with {:ok, params} <- Tarams.cast(params, sync_params),
-         {:ok, result} <- GitOpsManager.sync_from_discovery_to_gitops(params.commit_message) do
+         {:ok, result} <- Pipeline.sync_from_discovery_to_gitops(params.commit_message) do
       json(conn, %{
         success: true,
         message: "Successfully synced Discovery state to GitOps",
@@ -209,7 +209,7 @@ defmodule DiscoveryWeb.GitOpsController do
 
     with {:ok, params} <- Tarams.cast(params, sync_params),
          {:ok, result} <-
-           GitOpsManager.sync_app_from_discovery_to_gitops(params.app_name, params.commit_message) do
+           Pipeline.sync_app_from_discovery_to_gitops(params.app_name, params.commit_message) do
       json(conn, %{
         success: true,
         message: "Successfully synced #{params.app_name} from Discovery to GitOps",

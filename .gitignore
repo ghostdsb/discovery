@@ -44,3 +44,5 @@ npm-debug.log
 
 example_workflow.sh
 test_gitops.exs
+/.antigravitycli/
+/notes/

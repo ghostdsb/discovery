@@ -12,13 +12,11 @@ config :discovery, DiscoveryWeb.Endpoint,
   code_reloader: true,
   check_origin: false,
   watchers: [
-    # node: [
-    #   "node_modules/webpack/bin/webpack.js",
-    #   "--mode",
-    #   "development",
-    #   "--watch-stdin",
-    #   cd: Path.expand("../assets", __DIR__)
-    # ]
+    npm: [
+      "run",
+      "watch",
+      cd: Path.expand("../assets", __DIR__)
+    ]
   ]
 
 # ## SSL Support
@@ -69,7 +67,14 @@ config :phoenix, :plug_init_mode, :runtime
 config :discovery, :base_url, "http://localhost:4000"
 
 config :discovery,
-  connection_method: :kube_config,
+  # Connection method to use for communicating with Kubernetes:
+  #   - :stub            => Local Sandbox Mode (Offline). Mock connection requiring zero Kubernetes
+  #                         infrastructure. Loads and writes files to the local "data/discovery/" folder
+  #                         and dynamically parses ingress.yml configurations to support development.
+  #   - :service_account => In-Cluster Mode. Uses standard service account tokens inside a live K8s pod.
+  #   - :kube_config     => Local Cluster Mode. Loads cluster context from the local "~/.kube/config" file
+  #                         to connect to a running local cluster (e.g. k3d, minikube, kind) or remote cloud cluster.
+  connection_method: :stub,
   namespace: "discovery",
   ## "discovery-service-account",
   service_account: "default",

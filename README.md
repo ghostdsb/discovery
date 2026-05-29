@@ -14,6 +14,7 @@
 4. [Running Discovery](#running-discovery)
     - [Prerequisites](#prerequisites)
     - [Setup Tips](#setup-tips)
+    - [Kubernetes Connection Modes & Local k3d Setup](docs/kubernetes-connection-modes.md)
     - [Running Discovery server](#running-discovery-server)
     - [Using dashboard](#using-dashboard)
 5. [Demo time](#demo-time)
@@ -103,6 +104,9 @@ Added advantages of building over Kubernetes,
 
 ### Setup Tips
 
+For complete, step-by-step instructions on configuring the different connection modes (Sandbox, Local Kubeconfig, and In-Cluster), setting up a local cluster using **k3d** (with local registry, Ingress-Nginx, and ArgoCD), or managing Kubernetes manifest templates, please refer to the **[Kubernetes Connection Modes & Local k3d Setup Guide](docs/kubernetes-connection-modes.md)**.
+
+Quick local Minikube reference:
 - `docker login`
 - `minikube start --driver=docker` (starting minikube)
 - `kubectl config use-context minikube` (set kubectl to use minikube cluster)
@@ -142,7 +146,7 @@ The dashboard is called **Bridge**
 - Client will hit Discovery API, and get the latest server endpoint url.
 
     ```
-    GET - http://localhost:4000/api/get-endpoint?app_name=nightwatch
+    GET - http://localhost:4000/api/endpoint?app_name=nightwatch
     
     RESPONSE - 
     {

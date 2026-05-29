@@ -94,7 +94,7 @@ jobs:
           context: .
           file: ./dockerfiles/Dockerfile
           push: true
-          tags: gamezop/discovery:${{ steps.tag_logic.outputs.final_tag }}
+          tags: discovery/discovery:${{ steps.tag_logic.outputs.final_tag }}
           build-args: |
             MIX_ENV=${{ github.event.inputs.env || 'prod' }}
           secrets: |

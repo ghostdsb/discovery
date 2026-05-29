@@ -1,4 +1,4 @@
-defmodule Discovery.K8s.Resources.ConfigMap do
+defmodule Discovery.Kubernetes.Manifests.ConfigMap do
   @moduledoc """
   ConfigMap related K8s operations
   """

@@ -1,11 +1,11 @@
-defmodule Discovery.Engine.Cleaner do
+defmodule Discovery.Orchestrator.Cleaner do
   @moduledoc """
   Deletes zombie deployments with lifespan more than 1hr from latest
   deployment at an interval of 1 day
   """
-  alias Discovery.Bridge.Utils, as: BridgeUtils
+  alias Discovery.Dashboard.Queries, as: DashboardQueries
   alias Discovery.K8s.DeploymentController
-  alias Discovery.Engine.Reader
+  alias Discovery.Kubernetes.Reader
 
   require Logger
 
@@ -37,7 +37,7 @@ defmodule Discovery.Engine.Cleaner do
             "DELETED STALE DEPLOYMENT #{deployment_name}, lifespan #{lifespan / 60} mins"
           )
 
-          BridgeUtils.delete_deployment(deployment_name)
+          DashboardQueries.delete_deployment(deployment_name)
 
         _ ->
           :ok

@@ -1,4 +1,4 @@
-defmodule Discovery.K8s.Resources.Service do
+defmodule Discovery.Kubernetes.Manifests.Service do
   @moduledoc """
   Service related K8s operations
   """

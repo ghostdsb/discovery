@@ -1,4 +1,4 @@
-defmodule Discovery.GitOps.GitAdapter do
+defmodule Discovery.Git.Client do
   @moduledoc """
   Git operations for GitOps repository management.
   Handles cloning, branching, committing, and pushing to GitOps repos.

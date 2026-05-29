@@ -1,4 +1,4 @@
-defmodule Discovery.GitOps.RepoLayout do
+defmodule Discovery.Git.Layout do
   @moduledoc """
   Manages GitOps repository layout and file path conventions.
   Handles app-specific paths, environment overlays, and file naming.

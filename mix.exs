@@ -10,7 +10,46 @@ defmodule Discovery.MixProject do
       compilers: [:phoenix, :gettext] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+
+      # Open Source & ExDoc Configuration
+      name: "Discovery",
+      source_url: "https://github.com/discovery/discovery",
+      homepage_url: "https://github.com/discovery/discovery",
+      docs: [
+        main: "README",
+        logo: "doc_assets/discovery-logo.png",
+        extras: [
+          "README.md": [title: "Overview"],
+          "docs/introduction.md": [title: "1. Introduction"],
+          "docs/getting-started.md": [title: "2. Getting Started"],
+          "docs/core-concepts.md": [title: "3. Core Concepts"],
+          "docs/api-reference.md": [title: "4. API Reference"],
+          "docs/bridge-dashboard.md": [title: "5. Bridge Dashboard"],
+          "docs/ci-cd-integration.md": [title: "6. CI/CD Integration"],
+          "CONTRIBUTING.md": [title: "Contributing Guide"],
+          "PRODUCTION.md": [title: "Production Deploy Guide"],
+          "GITOPS_FLOW.md": [title: "GitOps Flow"]
+        ],
+        groups_for_extras: [
+          "Getting Started": [
+            "README.md",
+            "docs/introduction.md",
+            "docs/getting-started.md",
+            "docs/core-concepts.md"
+          ],
+          "Guides & APIs": [
+            "docs/api-reference.md",
+            "docs/bridge-dashboard.md",
+            "docs/ci-cd-integration.md"
+          ],
+          "Operations & Contributing": [
+            "CONTRIBUTING.md",
+            "PRODUCTION.md",
+            "GITOPS_FLOW.md"
+          ]
+        ]
+      ]
     ]
   end
 

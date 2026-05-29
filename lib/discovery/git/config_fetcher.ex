@@ -1,4 +1,4 @@
-defmodule Discovery.GitOps.ConfigFetcher do
+defmodule Discovery.Git.ConfigFetcher do
   @moduledoc """
   Fetches ConfigMap data for CI deploys from different sources:
   - git: %{repo, path, rev}

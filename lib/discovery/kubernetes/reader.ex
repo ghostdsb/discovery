@@ -1,4 +1,4 @@
-defmodule Discovery.Engine.Reader do
+defmodule Discovery.Kubernetes.Reader do
   @moduledoc """
   MetadataDB read operations.
   """

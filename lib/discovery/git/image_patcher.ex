@@ -1,11 +1,11 @@
-defmodule Discovery.GitOps.ImageUpdater do
+defmodule Discovery.Git.ImagePatcher do
   @moduledoc """
   Updates Docker image tags in Kubernetes deployment manifests.
   Handles YAML parsing, image tag replacement, and validation.
   """
 
   require Logger
-  alias Discovery.GitOps.RepoLayout
+  alias Discovery.Git.Layout
   alias Discovery.Utils
 
   @type update_result :: {:ok, map()} | {:error, String.t()}
@@ -15,7 +15,7 @@ defmodule Discovery.GitOps.ImageUpdater do
   """
   @spec update_image_tag(String.t(), String.t(), String.t(), String.t()) :: update_result
   def update_image_tag(repo_path, app_name, new_tag, environment \\ "production") do
-    config = RepoLayout.get_app_config(app_name, environment)
+    config = Layout.get_app_config(app_name, environment)
 
     with {:ok, content} <- read_deployment_file(repo_path, config.deployment_file),
          {:ok, updated_content} <- replace_image_tag(content, new_tag),
@@ -32,7 +32,7 @@ defmodule Discovery.GitOps.ImageUpdater do
   @spec get_current_image_tag(String.t(), String.t(), String.t()) ::
           {:ok, String.t()} | {:error, String.t()}
   def get_current_image_tag(repo_path, app_name, environment \\ "production") do
-    config = RepoLayout.get_app_config(app_name, environment)
+    config = Layout.get_app_config(app_name, environment)
 
     with {:ok, content} <- read_deployment_file(repo_path, config.deployment_file),
          {:ok, parsed} <- parse_yaml(content),
@@ -53,8 +53,8 @@ defmodule Discovery.GitOps.ImageUpdater do
         tag,
         environment \\ "production"
       ) do
-    config = RepoLayout.get_app_config(app_name, environment)
-    namespace = RepoLayout.get_namespace(app_name, environment)
+    config = Layout.get_app_config(app_name, environment)
+    namespace = Layout.get_namespace(app_name, environment)
 
     manifest = generate_deployment_manifest(app_name, image_name, tag, namespace)
 

@@ -1,6 +1,6 @@
 defmodule DiscoveryWeb.EndpointController do
   use DiscoveryWeb, :controller
-  alias Discovery.Engine.Reader
+  alias Discovery.Kubernetes.Reader
 
   def get_endpoint(conn, params) do
     IO.puts("params => #{inspect(params)}")

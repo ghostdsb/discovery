@@ -3,10 +3,10 @@ defmodule Discovery.Deploy.Utils do
   Includes handles all the utilities for CRUD operations of app deployments
   """
   alias Discovery.Deploy.Utils, as: DeployUtils
-  alias Discovery.Engine.Builder
+  alias Discovery.Kubernetes.Client
   alias Discovery.Utils
 
-  alias Discovery.K8s.Resources.{
+  alias Discovery.Kubernetes.Manifests.{
     ConfigMap,
     Deployment,
     Ingress,
@@ -45,7 +45,7 @@ defmodule Discovery.Deploy.Utils do
             config_map: map(),
             app_host: String.t(),
             app_target_port: number(),
-            app_container_port: number(),
+            app_container_port: number()
             # secret_refs: [String.t()]
           }
 
@@ -120,7 +120,7 @@ defmodule Discovery.Deploy.Utils do
   # TO-DO REFACTOR ME
   @spec delete_app(binary) :: {:ok, [binary]} | {:error, atom, binary}
   def delete_app(app_name) do
-    conn = Builder.get_conn()
+    conn = Client.get_conn()
 
     Ingress.get_ingress_services(conn, app_name)
     |> Enum.each(fn app ->
@@ -268,22 +268,28 @@ defmodule Discovery.Deploy.Utils do
   defp run_resource(resource) do
     Utils.puts_warn("RUNNING RESOURCE: #{resource}")
 
-    with conn when not is_nil(conn) <- Builder.get_conn(),
-         {:ok, resource_map} <- K8s.Resource.from_file(resource),
-         operation <- K8s.Client.create(resource_map),
-         {:ok, _} <- K8s.Client.run(conn, operation) do
-      Utils.puts_success("SUCCESS: #{resource}")
-      :ok
-    else
+    case Client.get_conn() do
+      :stub_connection ->
+        Utils.puts_success("SANDBOX: Applied resource successfully (Stub Mode): #{resource}")
+        :ok
+
       nil ->
         Logger.error("no K8s connection found")
         Utils.puts_error("ERROR IN APPLYING RESOURCE: #{resource}")
         {:error, "error in applying #{resource}"}
 
-      {:error, error} ->
-        Logger.error(error)
-        Utils.puts_error("ERROR IN APPLYING RESOURCE: #{resource}")
-        {:error, "error in applying #{resource}"}
+      conn ->
+        with {:ok, resource_map} <- K8s.Resource.from_file(resource),
+             operation <- K8s.Client.create(resource_map),
+             {:ok, _} <- K8s.Client.run(conn, operation) do
+          Utils.puts_success("SUCCESS: #{resource}")
+          :ok
+        else
+          {:error, error} ->
+            Logger.error(error)
+            Utils.puts_error("ERROR IN APPLYING RESOURCE: #{resource}")
+            {:error, "error in applying #{resource}"}
+        end
     end
   end
 
@@ -291,22 +297,28 @@ defmodule Discovery.Deploy.Utils do
   defp patch_resource(resource) do
     Utils.puts_warn("PATCHING RESOURCE: #{resource}")
 
-    with conn when not is_nil(conn) <- Builder.get_conn(),
-         {:ok, resource_map} <- K8s.Resource.from_file(resource),
-         operation <- K8s.Client.patch(resource_map),
-         {:ok, _} <- K8s.Client.run(conn, operation) do
-      Utils.puts_success("SUCCESS: #{resource}")
-      :ok
-    else
+    case Client.get_conn() do
+      :stub_connection ->
+        Utils.puts_success("SANDBOX: Patched resource successfully (Stub Mode): #{resource}")
+        :ok
+
       nil ->
         Logger.error("no K8s connection found")
         Utils.puts_error("ERROR IN APPLYING RESOURCE: #{resource}")
         {:error, "error in applying #{resource}"}
 
-      {:error, error} ->
-        Logger.error(error)
-        Utils.puts_error("ERROR IN PATCHING RESOURCE: #{resource}")
-        {:error, "error in patching #{resource}"}
+      conn ->
+        with {:ok, resource_map} <- K8s.Resource.from_file(resource),
+             operation <- K8s.Client.patch(resource_map),
+             {:ok, _} <- K8s.Client.run(conn, operation) do
+          Utils.puts_success("SUCCESS: #{resource}")
+          :ok
+        else
+          {:error, error} ->
+            Logger.error(error)
+            Utils.puts_error("ERROR IN PATCHING RESOURCE: #{resource}")
+            {:error, "error in patching #{resource}"}
+        end
     end
   end
 
@@ -314,20 +326,26 @@ defmodule Discovery.Deploy.Utils do
   defp delete_resource(del_operation, name) do
     Utils.puts_warn("DELETING RESOURCE: #{name}")
 
-    with conn when not is_nil(conn) <- Builder.get_conn(),
-         {:ok, _} <- K8s.Client.run(conn, del_operation) do
-      Utils.puts_success("DELETED: #{name}")
-      :ok
-    else
+    case Client.get_conn() do
+      :stub_connection ->
+        Utils.puts_success("SANDBOX: Deleted resource successfully (Stub Mode): #{name}")
+        :ok
+
       nil ->
         Logger.error("no K8s connection found")
         Utils.puts_error("ERROR IN DELETING RESOURCE: #{name}")
         {:error, "error in deleting #{name}"}
 
-      {:error, error} ->
-        Logger.error(error)
-        Utils.puts_error("ERROR IN DELETING RESOURCE: #{name}")
-        {:error, "error in deleting #{name}"}
+      conn ->
+        with {:ok, _} <- K8s.Client.run(conn, del_operation) do
+          Utils.puts_success("DELETED: #{name}")
+          :ok
+        else
+          {:error, error} ->
+            Logger.error(error)
+            Utils.puts_error("ERROR IN DELETING RESOURCE: #{name}")
+            {:error, "error in deleting #{name}"}
+        end
     end
   end
 end

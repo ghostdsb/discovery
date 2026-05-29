@@ -1,7 +1,7 @@
 defmodule DiscoveryWeb.PageLive do
   @moduledoc false
   use DiscoveryWeb, :live_view
-  alias Discovery.Bridge.Utils, as: BridgeUtils
+  alias Discovery.Dashboard.Queries, as: DashboardQueries
   alias Discovery.Deploy.Utils, as: DeployUtils
   @impl true
   def mount(_params, _session, socket) do
@@ -69,7 +69,7 @@ defmodule DiscoveryWeb.PageLive do
   def handle_event("select-app", %{"app" => app_name} = _params, socket) do
     selected_app_details =
       app_name
-      |> BridgeUtils.get_deployment_data()
+      |> DashboardQueries.get_deployment_data()
 
     socket =
       socket
@@ -143,7 +143,7 @@ defmodule DiscoveryWeb.PageLive do
         {:ok, _app_id} ->
           selected_app_details =
             app_name
-            |> BridgeUtils.get_deployment_data()
+            |> DashboardQueries.get_deployment_data()
 
           assign(
             socket,
@@ -162,16 +162,16 @@ defmodule DiscoveryWeb.PageLive do
 
   ## HELPER FUNCTIONS ##
   defp get_apps do
-    BridgeUtils.get_apps()
+    DashboardQueries.get_apps()
   end
 
   defp create_app(app_name) do
     app_name
-    |> BridgeUtils.create_app()
+    |> DashboardQueries.create_app()
   end
 
   defp create_deployment(%{app_name: app_name} = deployment_details) do
-    deployment_status = BridgeUtils.create_deployment(deployment_details)
+    deployment_status = DashboardQueries.create_deployment(deployment_details)
 
     Process.send_after(
       self(),

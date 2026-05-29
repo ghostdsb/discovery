@@ -3,9 +3,9 @@ defmodule Discovery.Application do
   use Application
 
   alias Discovery.K8s.DeploymentController
-  alias Discovery.Deploy.Manager, as: DeployManager
-  alias Discovery.Engine.Builder
-  alias Discovery.GitOps.GitOpsManager
+  alias Discovery.Orchestrator.Controller, as: DeployController
+  alias Discovery.Kubernetes.Client
+  alias Discovery.Orchestrator.Pipeline
   alias Discovery.Scheduler
   alias Discovery.Utils
 
@@ -25,10 +25,10 @@ defmodule Discovery.Application do
       {Phoenix.PubSub, name: Discovery.PubSub},
       # Start the Endpoint (http/https)
       DiscoveryWeb.Endpoint,
-      {Builder, []},
+      {Client, []},
       {DeploymentController, []},
-      {DeployManager, []},
-      {GitOpsManager, gitops_opts(git_access_token)},
+      {DeployController, []},
+      {Pipeline, gitops_opts(git_access_token)},
       Scheduler
     ]
 
@@ -51,7 +51,7 @@ defmodule Discovery.Application do
 
   defp gitops_opts(token) do
     [
-      repo_url: "git@github.com:gamezop/discovery-k8s.git",
+      repo_url: "git@github.com:discovery/discovery-k8s.git",
       token: token,
       local_path: "/tmp/discovery-k8s",
       use_pr: false,

@@ -1,4 +1,4 @@
-defmodule Discovery.K8s.Resources.Ingress do
+defmodule Discovery.Kubernetes.Manifests.Ingress do
   @moduledoc """
   Ingress related K8s operations
   """
