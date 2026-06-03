@@ -159,54 +159,21 @@ defmodule Discovery.Kubernetes.Watcher do
         |> List.first()
 
       cache_pod(app_name, freshest_pod)
+
+      pod_objects = Enum.map(app_pods, &to_pod_struct/1)
+      :ets.insert(Utils.metadata_db(), {{:all_pods, app_name}, pod_objects})
     end)
   end
 
   defp process_watch_event("DELETED", pod) do
     app_name = pod["metadata"]["labels"]["app"]
-    pod_name = pod["metadata"]["name"]
-    Logger.info("Watch Event [DELETED]: Tearing down routes for pod #{pod_name}")
-
-    case :ets.lookup(Utils.metadata_db(), app_name) do
-      [{^app_name, %{pod_name: ^pod_name}}] ->
-        :ets.delete(Utils.metadata_db(), app_name)
-
-      _ ->
-        :ok
-    end
+    update_pod_list_and_active_route(app_name, "DELETED", pod)
   end
 
   defp process_watch_event(event_type, pod) when event_type in ["ADDED", "MODIFIED"] do
     app_name = pod["metadata"]["labels"]["app"]
-
-    if pod["metadata"]["deletionTimestamp"] != nil do
-      pod_name = pod["metadata"]["name"]
-      Logger.info("Watch Event [DRAINING]: Pod #{pod_name} entered terminating state. Evicting from active routing pool.")
-
-      case :ets.lookup(Utils.metadata_db(), app_name) do
-        [{^app_name, %{pod_name: ^pod_name}}] ->
-          :ets.delete(Utils.metadata_db(), app_name)
-
-        _ ->
-          :ok
-      end
-    else
-      if is_active_and_healthy?(pod) do
-        case :ets.lookup(Utils.metadata_db(), app_name) do
-          [{^app_name, cached}] ->
-            new_ts = parse_timestamp(pod["metadata"]["creationTimestamp"])
-
-            if DateTime.compare(new_ts, cached.created_at) == :gt do
-              Logger.info("Watch Event [UPGRADE]: Promoting newer pod #{pod["metadata"]["name"]} to active client routes.")
-              cache_pod(app_name, pod)
-            end
-
-          _ ->
-            Logger.info("Watch Event [INITIAL]: Registering active route for app #{app_name} on pod #{pod["metadata"]["name"]}")
-            cache_pod(app_name, pod)
-        end
-      end
-    end
+    actual_event = if pod["metadata"]["deletionTimestamp"] != nil, do: "DRAINING", else: event_type
+    update_pod_list_and_active_route(app_name, actual_event, pod)
   end
 
   # --- Parsing Utility Guards ---
@@ -225,25 +192,75 @@ defmodule Discovery.Kubernetes.Watcher do
     end)
   end
 
-  defp cache_pod(app_name, pod) do
+  defp to_pod_struct(pod) do
+    app_name = pod["metadata"]["labels"]["app"]
+    pod_name = pod["metadata"]["name"]
     ip = pod["status"]["podIP"] || "127.0.0.1"
     port = get_in(pod, ["spec", "containers"]) |> List.first() |> get_in(["ports"]) |> List.first() |> Map.get("containerPort") || 4000
     created_at = parse_timestamp(pod["metadata"]["creationTimestamp"])
     version = pod["metadata"]["resourceVersion"] || "0"
-    ingress_url = get_ingress_url_fallback(app_name, pod["metadata"]["name"])
-    pod_name = pod["metadata"]["name"]
+    ingress_url = get_ingress_url_fallback(app_name, pod_name)
+    image = get_in(pod, ["spec", "containers"]) |> List.first() |> Map.get("image") || "unknown"
 
-    :ets.insert(Utils.metadata_db(), {app_name, %{
+    %{
       pod_name: pod_name,
       ip: ip,
       port: port,
       created_at: created_at,
       version: version,
       url: ingress_url,
-      image: get_in(pod, ["spec", "containers"]) |> List.first() |> Map.get("image") || "unknown",
+      image: image,
       replicas: 1,
       last_updated: created_at
-    }})
+    }
+  end
+
+  defp cache_pod(app_name, pod) do
+    :ets.insert(Utils.metadata_db(), {app_name, to_pod_struct(pod)})
+  end
+
+  defp update_pod_list_and_active_route(app_name, event_type, pod) do
+    pod_name = pod["metadata"]["name"]
+
+    current_pods =
+      case :ets.lookup(Utils.metadata_db(), {:all_pods, app_name}) do
+        [{_, list}] -> list
+        _ -> []
+      end
+
+    new_pods =
+      case event_type do
+        "DELETED" ->
+          Enum.reject(current_pods, fn p -> p.pod_name == pod_name end)
+
+        _ ->
+          if is_active_and_healthy?(pod) do
+            pod_struct = to_pod_struct(pod)
+            current_pods
+            |> Enum.reject(fn p -> p.pod_name == pod_name end)
+            |> Kernel.++([pod_struct])
+          else
+            Enum.reject(current_pods, fn p -> p.pod_name == pod_name end)
+          end
+      end
+
+    case new_pods do
+      [] ->
+        Logger.info("Watch Event: App #{app_name} has no healthy pods remaining. Clearing routes.")
+        :ets.delete(Utils.metadata_db(), app_name)
+        :ets.delete(Utils.metadata_db(), {:all_pods, app_name})
+
+      _ ->
+        freshest_pod_struct =
+          new_pods
+          |> Enum.sort_by(fn p -> p.created_at end, {:desc, DateTime})
+          |> List.first()
+
+        Logger.info("Watch Event [#{event_type}]: Recalculated active route for #{app_name} to pod #{freshest_pod_struct.pod_name}")
+
+        :ets.insert(Utils.metadata_db(), {app_name, freshest_pod_struct})
+        :ets.insert(Utils.metadata_db(), {{:all_pods, app_name}, new_pods})
+    end
   end
 
   defp get_ingress_url_fallback(app_name, pod_name) do

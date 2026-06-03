@@ -89,10 +89,19 @@ defmodule DiscoveryWeb.PageLive do
   end
 
   @impl true
+  def handle_event("delete-app", %{"app" => app_name} = _params, socket) do
+    {:ok, :app_deleted} = DashboardQueries.delete_app(app_name)
+    socket =
+      socket
+      |> assign(selected_app: nil, apps: get_apps())
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("back", _params, socket) do
     socket =
       socket
-      |> assign(selected_app: nil)
+      |> assign(selected_app: nil, apps: get_apps())
 
     {:noreply, socket}
   end

@@ -26,10 +26,14 @@ defmodule Discovery.MixProject do
           "docs/core-concepts.md": [title: "3. Core Concepts"],
           "docs/api-reference.md": [title: "4. API Reference"],
           "docs/bridge-dashboard.md": [title: "5. Bridge Dashboard"],
-          "docs/ci-cd-integration.md": [title: "6. CI/CD Integration"],
+          "docs/service-directory-guide.md": [title: "6. Service Directory Guide"],
+          "docs/kubernetes-connection-modes.md": [title: "7. K8s Connection Modes"],
+          "docs/local-k3d-testing.md": [title: "8. Local k3d Testing"],
+          "docs/local-k3s-compose.md": [title: "9. Local k3s Compose"],
+          "docs/local-verification-guide.md": [title: "10. Local Verification Guide"],
+          "docs/walkthrough_v2.md": [title: "11. Architecture Walkthrough"],
           "CONTRIBUTING.md": [title: "Contributing Guide"],
-          "PRODUCTION.md": [title: "Production Deploy Guide"],
-          "GITOPS_FLOW.md": [title: "GitOps Flow"]
+          "PRODUCTION.md": [title: "Production Deploy Guide"]
         ],
         groups_for_extras: [
           "Getting Started": [
@@ -41,12 +45,18 @@ defmodule Discovery.MixProject do
           "Guides & APIs": [
             "docs/api-reference.md",
             "docs/bridge-dashboard.md",
-            "docs/ci-cd-integration.md"
+            "docs/service-directory-guide.md",
+            "docs/kubernetes-connection-modes.md"
+          ],
+          "Deployment & Verification": [
+            "docs/local-k3d-testing.md",
+            "docs/local-k3s-compose.md",
+            "docs/local-verification-guide.md",
+            "docs/walkthrough_v2.md"
           ],
           "Operations & Contributing": [
             "CONTRIBUTING.md",
-            "PRODUCTION.md",
-            "GITOPS_FLOW.md"
+            "PRODUCTION.md"
           ]
         ]
       ]

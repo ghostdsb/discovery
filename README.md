@@ -157,38 +157,14 @@ The dashboard is called **Bridge**
 
     ```
 
-## CI/CD & GitOps (Jenkins Alternative)
+## Connecting Applications to Discovery's Watcher
 
-Discovery can act as a lightweight, GitOps-centric CD controller. You can trigger deployments via a simple API call from your CI pipeline (GitHub Actions, GitLab CI, etc.).
+Discovery does not act as a CD controller; instead, it integrates natively with your existing Kubernetes deployments:
 
-For a comprehensive, production-ready step-by-step example with an interactive sequence flow diagram, detailed instructions on secure **Secret Management** (ensuring no database or API credentials ever leak into your CI pipelines or logs), and template customizations, please see the **[End-to-End CI/CD & Secret Management Guide](docs/end-to-end-cicd-and-secrets.md)**.
-
-### Deploying via CI API
-
-```bash
-curl -X POST "http://discovery.local/api/ci/deploy" \
-  -H "Content-Type: application/json" \
-  -H "x-api-token: YOUR_DISCOVERY_API_TOKEN" \
-  -d '{
-    "app_name": "my-app",
-    "image": "my-registry/my-app:sha-12345",
-    "environment": "production",
-    "config_ref": {
-      "app_host": "my-app.example.com",
-      "app_target_port": 80,
-      "app_container_port": 4000
-    },
-    "idempotency_key": "unique-build-id"
-  }'
-```
-
-### GitOps Flow
-
-1. **Trigger**: CI pipeline calls Discovery API.
-2. **Orchestrate**: Discovery clones the GitOps repository.
-3. **Generate**: It generates Kubernetes manifests (Deployment, Service, Ingress, ConfigMap) based on the provided parameters.
-4. **Push**: It commits and pushes the changes to the GitOps repository.
-5. **Apply**: Discovery optionally applies the changes directly to K8s for immediate availability (configurable).
+1. **Register the App**: Add your application name (e.g. `wsgo-price`) to Discovery's registry via the HTTP API or the Bridge dashboard.
+2. **Apply Kubernetes Labels**: Ensure your application's pod manifests include the label `app: <app-name>` matching the registered name, and run under the `discovery` namespace.
+3. **Live Syncing**: The Discovery Watcher streams events directly from the Kubernetes Watch API in real-time, updating the active allocation endpoints automatically when pods transition statuses.
+4. **Client Suffix Routing**: Your game client queries `GET /api/endpoint?app_name=<app-name>` and instantly receives the freshest, fully ready pod's direct ingress routing URL.
 
 ## Demo time
 

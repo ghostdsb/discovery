@@ -1,108 +1,111 @@
 # Getting Started
 
-This guide walks you through setting up your local machine to run, test, and develop with **Discovery** in Sandbox Mode. By the end of this guide, you will have a local service directory running, ready to register applications, monitor active routes, and answer microsecond client allocation queries.
+This guide walks you through setting up **Discovery** inside a Kubernetes cluster, registering your application, and allocating client connections.
 
 ---
 
-## ⚡ 1. Start the Discovery Server Locally
+## ⚡ 1. How Discovery Works in a Cluster
 
-Discovery is built using Elixir and the Phoenix Framework. Our Sandbox Mode (`connection_method: :stub`) runs completely offline with **zero cluster or Docker dependencies**, allowing you to test everything in seconds!
-
-### Step 1: Install Dependencies
-Ensure you have Elixir and Node.js installed, then install Erlang/Elixir dependencies:
-```bash
-mix setup
-```
-
-### Step 2: Compile Assets
-Compile the TailwindCSS/Webpack frontend styles for the Bridge Dashboard:
-```bash
-mix assets.deploy
-```
-
-### Step 3: Run the Development Server
-Launch the server:
-```bash
-mix phx.server
-# or run inside an interactive Elixir shell
-iex -S mix phx.server
-```
-*Discovery will boot up in sandbox mode, outputting database initialization logs:*
-`[info] Watcher running in :stub sandbox mode (monitoring data/discovery/)`
-
-Once running, you can access the visual web dashboard by opening [http://localhost:4000](http://localhost:4000) in your browser.
+Discovery acts as a super-fast dynamic registry. Instead of managing container lifecycle or templates itself, it connects directly to the Kubernetes API:
+1. You run a standard deployment of your app in Kubernetes.
+2. The **Watcher Subsystem** (`Discovery.Kubernetes.Watcher`) receives events from the K8s API in real-time.
+3. It promotes the freshest healthy pod to the active routing cache.
+4. Game clients query Discovery for the latest active suffix, then connect directly via Ingress.
 
 ---
 
-## 🎮 2. Register Your First Application
+## ☸️ 2. Deploy Discovery to a Cluster
 
-Let's register an application boundary inside Discovery's registry so that the watcher begins tracking it.
+For local testing, ensure your local cluster is running (such as the k3d cluster defined in `k3d_setup.sh`).
 
-Trigger a registration call using curl:
+### Step 1: Build the Docker Image
+Build the container image using the development Dockerfile:
 ```bash
-curl -X POST "http://localhost:4000/api/app" \
+docker build -f dev.Dockerfile -t discovery-app:latest .
+```
+
+### Step 2: Sideload Image (No External Registry Needed)
+If using k3d, import the image:
+```bash
+k3d image import discovery-app:latest -c discovery-cluster
+```
+If using our Docker Compose k3s setup:
+```bash
+make k8s-redeploy
+```
+
+### Step 3: Apply the Manifests
+Deploy the namespace, RBAC permissions, service, and ingress routing rules:
+```bash
+KUBECONFIG=data/k3s/kubeconfig.yaml kubectl apply -f k8s/dev-deployment.yaml
+```
+Verify the pod is running:
+```bash
+KUBECONFIG=data/k3s/kubeconfig.yaml kubectl get pods -n discovery
+```
+
+---
+
+## 🎮 3. Register Your Application
+
+To start tracking an app, register it via the REST API (or by clicking "Create App" on the visual dashboard at `http://discovery.localhost:8080`):
+
+```bash
+curl -X POST "http://discovery.localhost:8080/api/app" \
   -H "Content-Type: application/json" \
-  -d '{"app_name": "chess"}'
+  -d '{"app_name": "wsgo-price"}'
 ```
+*Once registered, the Watcher will automatically stream all pod changes with label `app=wsgo-price` inside the namespace.*
 
 ---
 
-## 🚀 3. Trigger a Mock Deployment
+## 🚀 4. Deploy Your Application
 
-In local Sandbox Mode, you can trigger mock deployments either by making a REST API call or by using the **Deploy** button directly inside the Bridge Dashboard UI.
+Deploy your application manifests. Ensure your pods include:
+* The label `app: <your-app-name>` matching the registered name.
+* Correct port configuration.
 
-Run this curl command to simulate a rolling update trigger:
+For example, apply `wsgo-price`'s deployment:
 ```bash
-curl -X POST "http://localhost:4000/api/ci/deploy" \
-  -H "Content-Type: application/json" \
-  -H "x-api-token: discovery-secret-token" \
-  -d '{
-    "app_name": "chess",
-    "image": "my-registry/chess-server:sha-9f8e7d",
-    "environment": "production",
-    "idempotency_key": "build-9f8e7d",
-    "config_ref": {
-      "app_host": "chess.local",
-      "app_target_port": 80,
-      "app_container_port": 4000
-    }
-  }'
+KUBECONFIG=data/k3s/kubeconfig.yaml kubectl apply -f path/to/wsgo-price/k8s/deployment.yaml
 ```
 
-#### 📦 What Happens Behind the Scenes:
-In local Sandbox Mode (`connection_method: :stub`), Discovery bypasses the live Kubernetes cluster and simulates a deployment by writing mock files to your local disk at:
-`data/discovery/apps/chess/chess-build-9f8e7d/`
-
-This is strictly a local sandbox simulator designed to let you test the Watcher's pod-discovery and routing logic without a Kubernetes cluster. In production, Discovery **does not** generate or write manifests; instead, it purely streams events from the live Kubernetes API server where manifests are applied directly by your CI/CD pipeline.
+Once the pods transition to `Running` and pass readiness probes, the Watcher will instantly capture them.
 
 ---
 
-## 🔍 4. Verify & Allocate Route
+## 🔍 5. Query and Resolve Routes
 
-Our dynamic Watcher process detects the local sandbox files, resolves the ingress endpoint from `data/discovery/chess/ingress.yml`, and updates the concurrent ETS routing cache.
-
-Query the Discovery API to fetch the active game server URL:
+### 1. Check Watcher Status
+Query the Watcher status endpoint to verify it has registered the healthy pods:
 ```bash
-curl -X GET "http://localhost:4000/api/endpoint?app_name=chess"
+curl -X GET "http://discovery.localhost:8080/api/watcher/status?app_name=wsgo-price"
 ```
-
-#### 📥 Expected JSON Response:
+*Response (Active!):*
 ```json
 {
-  "endpoint": "chess.local/build-9f8e7d"
+  "active": true,
+  "app_name": "wsgo-price",
+  "details": {
+    "created_at": "2026-06-03T12:12:22Z",
+    "image": "ghostdsbdocker/wsgo:0.0.8",
+    "ip": "10.42.0.30",
+    "port": 8000,
+    "url": "wsgo-price.example.com/gj6dm"
+  },
+  "tracked": true
 }
 ```
 
----
-
-## 📊 5. View in Dashboard
-Open `http://localhost:4000` in your web browser. You will see **`chess`** listed as healthy, showing `1` active deployment. Click on the name to view the container image, replicas, last-updated timestamp, and the dynamic router URL `chess.local/build-9f8e7d`!
-
----
-
-## ☸️ What's Next?
-When you are ready to transition from the sandbox to a live Kubernetes cluster, configure the cluster connection modes and set up your local k3d development cluster:
-- **[Kubernetes Connection Modes & Local k3d Setup Guide](kubernetes-connection-modes.md)**
-- **[Testing with Local k3d Cluster (Live Cluster Mode)](local-k3d-testing.md)**
-- **[Testing with Local K8s in Docker Compose (Live Cluster Mode)](local-k3s-compose.md)**
-- **[Full Service Directory & Session Draining Guide](service-directory-guide.md)**
+### 2. Allocate Route for Client
+Query the endpoint allocation API:
+```bash
+curl -X GET "http://discovery.localhost:8080/api/endpoint?app_name=wsgo-price"
+```
+*Response:*
+```json
+{
+  "endpoint": "wsgo-price.example.com/gj6dm"
+}
+```
+The client can now establish a WebSocket connection directly to `ws://wsgo-price.example.com:8080/gj6dm/ws`!

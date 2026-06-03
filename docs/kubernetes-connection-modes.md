@@ -1,238 +1,136 @@
-# Kubernetes Connection Modes & Local k3d Setup Guide
+# Kubernetes Connection Modes & Local Cluster Guide
 
-This guide provides a comprehensive, step-by-step walkthrough for configuring and running **Discovery** in its various deployment modes, setting up a local Kubernetes sandbox using **k3d**, and managing resources via template files.
+This guide details how to configure **Discovery** to connect to your Kubernetes cluster in development and production environments.
 
 ---
 
 ## 🛠️ Kubernetes Connection Modes
 
-Discovery can communicate with Kubernetes in three distinct modes, configured via the `connection_method` key in `config/config.exs` or `config/dev.exs`.
+Discovery supports two primary connection modes configured via the `connection_method` key in your configuration files (`config/config.exs`, `config/dev.exs`, or `config/prod.exs`).
 
 | Connection Mode | Target Environment | Infrastructure Dependency | Description |
 | :--- | :--- | :--- | :--- |
-| **`:stub`** | Local Machine | **None** (Offline) | Mock sandbox mode. Does not require a K8s cluster or kubeconfig. Perfect for rapid local development and frontend debugging. |
-| **`:kube_config`** | Local Development | Local/Remote K8s Cluster | Connects to an external cluster (e.g. k3d, minikube, EKS, GKE) by loading context from the default local `~/.kube/config` file. |
+| **`:kube_config`** | Local Development | Local/Remote K8s Cluster | Connects to a cluster (e.g. k3d, minikube) by loading context from the developer's local `~/.kube/config` file. |
 | **`:service_account`**| Production / Staging | Live Pod (In-Cluster) | Authenticates seamlessly using the local Service Account tokens automatically mounted inside the Pod at runtime. |
 
 ---
 
-### 1. 📴 `:stub` (Local Sandbox Mode)
+### 1. 💻 `:kube_config` (Local Cluster Mode)
 
-This mode runs **completely offline**. All cluster operations are mocked, and deployment metadata is loaded from local filesystem directories.
-
-#### ⚙️ Configuration Setup
-In `config/dev.exs`, set:
-```elixir
-config :discovery,
-  connection_method: :stub,
-  namespace: "discovery"
-```
-
-#### 🚀 How to Run & Use
-1. **Initialize Assets & Compile**:
-   ```bash
-   mix setup
-   mix assets.deploy
-   ```
-2. **Start Dev Server**:
-   ```bash
-   mix phx.server
-   # or run with interactive Elixir shell
-   iex -S mix phx.server
-   ```
-3. **Trigger Sandbox Deployment**:
-   Run a mock deploy build via Curl (creates local folders under `data/discovery/`):
-   ```bash
-   curl -X POST "http://localhost:4000/api/ci/deploy" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "app_name": "chess-game",
-       "image": "discovery/chess-server:v1.0.0",
-       "environment": "production",
-       "config_ref": {
-         "app_host": "chess.local",
-         "app_target_port": 80,
-         "app_container_port": 4000
-       },
-       "idempotency_key": "sandbox-key-1"
-     }'
-   ```
-4. **Fetch Latest Routing Endpoint**:
-   ```bash
-   curl -X GET "http://localhost:4000/api/endpoint?app_name=chess-game"
-   ```
-   *Expected Response:*
-   ```json
-   {
-     "endpoint": "chess.local/b4f0a3a8"
-   }
-   ```
-5. **UI Dashboard**: Open `http://localhost:4000` to view active mock deployments in the **Bridge Dashboard**.
-
----
-
-### 2. 💻 `:kube_config` (Local Cluster Mode)
-
-Used to connect to an external/local Kubernetes cluster (like k3d or minikube) from your local host machine.
+Used to connect to a local or remote Kubernetes cluster from your development machine.
 
 #### ⚙️ Configuration Setup
 In `config/dev.exs`, set:
 ```elixir
 config :discovery,
-  connection_method: :kube_config,
-  namespace: "discovery"
+  connection_method: :kube_config
 ```
 
 #### 🚀 How to Run & Use
-1. **Create Namespace** (if not already present):
+1. **Ensure the namespace exists**:
    ```bash
    kubectl create namespace discovery
    ```
-2. **Activate Cluster Context**:
-   Verify that your kubectl context is pointing to your development cluster:
+2. **Verify your active context**:
+   Ensure your local shell is pointing to the correct development cluster:
    ```bash
    kubectl config current-context
-   # For k3d:
-   kubectl config use-context k3d-discovery-cluster
    ```
-3. **Start Dev Server**:
+3. **Start the Phoenix server**:
    ```bash
    mix phx.server
    ```
-   *Note: On boot, Discovery will output connection logs:*
-   `[info] K8 connection success (Local Kubeconfig)`
+   Discovery will automatically read your `~/.kube/config` credentials and connect to the cluster's API endpoint.
 
 ---
 
-### 3. ☸️ `:service_account` (In-Cluster Mode)
+### 2. ☸️ `:service_account` (In-Cluster Mode)
 
-This is the standard mode for **Production/Staging** deployments inside a live Kubernetes cluster.
+This is the standard mode for production deployments running inside the Kubernetes cluster.
 
 #### ⚙️ Configuration Setup
 In `config/prod.exs` or `config/runtime.exs`:
 ```elixir
 config :discovery,
-  connection_method: :service_account,
-  namespace: System.get_env("DISCOVERY_NAMESPACE", "discovery"),
-  service_account: System.get_env("DISCOVERY_SA", "discovery-sa")
+  connection_method: :service_account
 ```
 
-#### 🚀 How to Deploy Discovery to the Cluster
-1. **Create service account and roles**:
-   Create a manifest `rbac.yml` to grant Discovery permission to perform CRUD operations on Deployments, Services, ConfigMaps, and Ingresses:
+#### 🚀 Deployment Setup
+
+1. **Deploy RBAC resources**:
+   Discovery needs a Service Account with permissions to get, list, and watch Pods in the `discovery` namespace. Create a manifest `rbac.yaml`:
    ```yaml
    apiVersion: v1
    kind: ServiceAccount
    metadata:
-     name: discovery-sa
+     name: discovery-service-account
      namespace: discovery
    ---
    apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRole
+   kind: Role
    metadata:
-     name: discovery-role
+     name: discovery-pod-watcher-role
+     namespace: discovery
    rules:
-     - apiGroups: ["", "apps", "networking.k8s.io"]
-       resources: ["deployments", "services", "configmaps", "ingresses", "namespaces", "pods"]
-       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+   - apiGroups: [""]
+     resources: ["pods"]
+     verbs: ["get", "list", "watch"]
    ---
    apiVersion: rbac.authorization.k8s.io/v1
-   kind: ClusterRoleBinding
+   kind: RoleBinding
    metadata:
-     name: discovery-role-binding
+     name: discovery-watcher-binding
+     namespace: discovery
    subjects:
-     - kind: ServiceAccount
-       name: discovery-sa
-       namespace: discovery
+   - kind: ServiceAccount
+     name: discovery-service-account
+     namespace: discovery
    roleRef:
-     kind: ClusterRole
-     name: discovery-role
+     kind: Role
+     name: discovery-pod-watcher-role
      apiGroup: rbac.authorization.k8s.io
    ```
    Apply it:
    ```bash
-   kubectl apply -f rbac.yml
+   kubectl apply -f rbac.yaml
    ```
-2. **Deploy Discovery**:
-   Ensure your Discovery pod spec specifies the service account name:
+
+2. **Deploy Discovery App**:
+   Ensure your application pod spec uses the configured service account:
    ```yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: discovery-app
+     namespace: discovery
    spec:
-     serviceAccountName: discovery-sa
+     template:
+       spec:
+         serviceAccountName: discovery-service-account
+         containers:
+         - name: discovery
+           image: discovery-app:latest
    ```
 
 ---
 
 ## 🐳 Starting a Local k3d Cluster
 
-**k3d** runs a multi-node, highly-scalable Kubernetes cluster inside Docker containers. We provide an automated installation script `k3d_setup.sh` in the project root.
-
-> [!NOTE]
-> Under the hood, this script configures a private local docker registry, disables standard Traefik, installs **Ingress-Nginx** as the router, and provisions **ArgoCD** for CD pipelines.
-
-### 📋 Prerequisites
-Install Docker and k3d on your host machine:
-```bash
-# macOS
-brew install k3d kubernetes-cli docker
-
-# Ubuntu/Debian
-curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=v5.4.6 bash
-```
+For local verification, you can spin up a lightweight Kubernetes cluster inside Docker using **k3d**.
 
 ### 🚀 Step-by-Step Cluster Setup
-1. **Ensure Docker is running**:
-   Make sure your Docker Desktop or engine is booted.
-2. **Execute Setup Script**:
+1. **Execute the Setup Script**:
+   We provide an automated installation script in the root directory:
    ```bash
    bash k3d_setup.sh
    ```
-3. **Verify Cluster State**:
-   Once the script displays `Setup complete!`, run:
+2. **Verify Cluster State**:
+   Once the script completes, run:
    ```bash
    kubectl get nodes
    ```
-   *Expected Output:*
-   ```text
-   NAME                              STATUS   ROLES                  AGE   VERSION
-   k3d-discovery-cluster-server-0    Ready    control-plane,master   1m    v1.24.4+k3s1
+3. **Deploy manifests**:
+   Deploy the Discovery app and tracked services inside the cluster to test live event synchronization:
+   ```bash
+   kubectl apply -f k8s/dev-deployment.yaml
    ```
-4. **Point Ingress-Nginx Load Balancer**:
-   The load balancer is mapped to port `8080` (HTTP) and `8443` (HTTPS) on your localhost. You can map domains (e.g. `chess.local`) to `127.0.0.1` inside your `/etc/hosts` file:
-   ```text
-   127.0.0.1 chess.local
-   ```
-   Then you can access your games locally via: `http://chess.local:8080/b4f0a3a8`
-
----
-
-## 📄 Managing Configuration Manifests & Templates
-
-Discovery uses standard Kubernetes raw templates located in `priv/templates/` to dynamically generate configs when CI or GitOps deploys take place.
-
-The following templates exist under [priv/templates/](file:///Users/ghostdsb/Documents/discovery/priv/templates/):
-
-| Template | Purpose | Key Variables Rendered |
-| :--- | :--- | :--- |
-| **`namespace.yml`** | Configures namespace boundaries. | `namespace` |
-| **`configmap.yml`** | Holds environment-specific configs. | `app_name`, `uid`, `env_vars` |
-| **`deploy.yml`** | The core pod container spec. | `app_name`, `uid`, `image`, `replicas`, `cpu/memory requests` |
-| **`service.yml`** | Connects internal pod networks. | `app_name`, `uid`, `port` |
-| **`ingress.yml`** | Maps traffic from host domain to service. | `app_name`, `host`, `path`, `serviceName` |
-
-### 🛠️ How to Customize Templates
-If you want to inject custom properties (e.g., node selectors, volumes, or health check probes):
-1. **Modify `deploy.yml`**:
-   Add environment variables, resource limits, or readiness/liveness probes directly into [priv/templates/deploy.yml](file:///Users/ghostdsb/Documents/discovery/priv/templates/deploy.yml).
-2. **Modify `ingress.yml`**:
-   Update annotation rewrites or custom TLS keys inside [priv/templates/ingress.yml](file:///Users/ghostdsb/Documents/discovery/priv/templates/ingress.yml).
-
-For example, to configure health check probes in [deploy.yml](file:///Users/ghostdsb/Documents/discovery/priv/templates/deploy.yml):
-```yaml
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
-```
-This change will be dynamically compiled and rendered on all subsequent deployments, ensuring zero-downtime health gates out-of-the-box!

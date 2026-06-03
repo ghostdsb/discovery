@@ -67,23 +67,46 @@ defmodule Discovery.K8s.DeploymentController do
 
   ### HELPER FUNCTIONS ###
 
-  defp lookup_deployments(app_name) do
-    case :ets.lookup(Utils.metadata_db(), app_name) do
+  defp lookup_deployments(app_name) when is_binary(app_name) do
+    case :ets.lookup(Utils.metadata_db(), {:all_pods, app_name}) do
       [] ->
-        %{}
+        case :ets.lookup(Utils.metadata_db(), app_name) do
+          [] ->
+            %{}
 
-      [{_app_name, details}] ->
-        # Format the pod metadata as a Map of deployment objects matching what the LiveView expects
-        name = "#{app_name}-#{details.version}"
+          [{_app_name, details}] ->
+            %{
+              details.pod_name => %{
+                "url" => details.url,
+                "image" => details.image,
+                "last_updated" => details.last_updated,
+                "replicas" => 1,
+                "ip" => details.ip,
+                "port" => details.port,
+                "active" => true
+              }
+            }
+        end
 
-        %{
-          name => %{
-            "url" => details.url,
-            "image" => details.image,
-            "last_updated" => details.last_updated,
-            "replicas" => details.replicas
-          }
-        }
+      [{_all_pods_key, pods}] ->
+        active_pod_name =
+          case :ets.lookup(Utils.metadata_db(), app_name) do
+            [{_app_name, %{pod_name: name}}] -> name
+            _ -> nil
+          end
+
+        pods
+        |> Enum.reduce(%{}, fn pod, acc ->
+          Map.put(acc, pod.pod_name, %{
+            "url" => pod.url,
+            "image" => pod.image,
+            "last_updated" => pod.last_updated,
+            "replicas" => 1,
+            "ip" => pod.ip,
+            "port" => pod.port,
+            "active" => pod.pod_name == active_pod_name
+          })
+        end)
     end
   end
 
@@ -112,6 +135,12 @@ defmodule Discovery.K8s.DeploymentController do
 
   defp populate_bridgedb do
     :ets.tab2list(Utils.metadata_db())
-    |> Enum.each(fn {app_name, _details} -> :ets.insert(Utils.bridge_db(), {app_name, true}) end)
+    |> Enum.each(fn
+      {app_name, _details} when is_binary(app_name) ->
+        :ets.insert(Utils.bridge_db(), {app_name, true})
+
+      _ ->
+        :ok
+    end)
   end
 end

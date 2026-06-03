@@ -1,130 +1,197 @@
-# Refactoring Walkthrough: High-Speed Runtime Service Directory
+# Discovery: System Architecture & Walkthrough Guide
 
-We have successfully completed the architectural transition of **Discovery** from a high-overhead, eventually consistent deployment manager into a high-throughput, sub-millisecond **Dynamic Service Registry & Allocator**!
-
-All custom GitOps templates, file-cloning routines, background cron cleaners, and deploy execution scripts have been permanently scrapped. The codebase is now extremely lean, compiling warning-free, and delivering microsecond client-routing lookups.
+This walkthrough guide details the architecture, design principles, and operational instructions for **Discovery**, a high-throughput, event-driven dynamic service registry and routing allocator for stateful multiplayer game servers and real-time pods.
 
 ---
 
-## 1. Summary of Architectural Cleanups
+## ⚡ 1. The Core Architecture
 
-We have deleted all obsolete custom CD and GitOps modules, reducing the project's technical debt and code footprint by **over 60%**:
-- **Obsolete Pipelines Removed**: Deleted `Discovery.Orchestrator.Pipeline` (cloned GitOps repo, modified Ingress rules), `Discovery.Orchestrator.Cleaner` (periodic scraper checking metrics), and `Discovery.Orchestrator.Controller` (direct deployment manager).
-- **VCS Adapters Removed**: Deleted the entire `Discovery.Git` folder (`client.ex`, `layout.ex`, `image_patcher.ex`, `config_fetcher.ex`).
-- **Deploy Utilities Removed**: Deleted the `Discovery.Deploy` folder.
-- **Polling Loop Removed**: Deleted the old `Discovery.Kubernetes.Client` continuous polling daemon.
+Unlike stateless HTTP apps, stateful apps (using WebSockets, long-lived TCP, or UDP connections) cannot be arbitrarily killed or misrouted during rolling deployments without terminating active user sessions. 
+
+Discovery separates the **deployment plane** from the **routing plane** by streaming events directly from the Kubernetes control plane in real-time, eliminating the need for periodic polling or custom orchestration layers.
+
+```mermaid
+graph TD
+    classDef elixir fill:#6A4C93,stroke:#4A3266,stroke-width:2px,color:#fff;
+    classDef k8s fill:#326CE5,stroke:#224EB5,stroke-width:2px,color:#fff;
+    classDef client fill:#FFD166,stroke:#DDA10C,stroke-width:2px,color:#000;
+
+    Client([Game Client]):::client -->|1. GET /api/endpoint?app_name=chess| DiscoveryAPI[Discovery API]:::elixir
+    DiscoveryAPI -->|2. Microsecond Lookup| ETS[[:metadatadb Cache]]:::elixir
+    
+    subgraph K8s_Control_Plane [Kubernetes Control Plane]
+        K8sAPI[K8s API Server]:::k8s
+    end
+    
+    Watcher[Discovery.Watcher]:::elixir <-->|3. Watch Stream: /pods?watch=true| K8sAPI
+    Watcher -->|4. Atomically Updates| ETS
+```
+
+### Key Subsystems:
+1. **`Discovery.Kubernetes.Watcher`**:
+   - Establishes a persistent, streaming connection to the Kubernetes Watch API (`/api/v1/namespaces/{namespace}/pods?watch=true`).
+   - Receives push notifications from K8s the exact millisecond a pod status changes (e.g. `ADDED`, `MODIFIED`, `DELETED`).
+   - Filters out draining pods (`metadata.deletionTimestamp != nil`) and only promotes the **freshest, fully ready** pod IP and suffix path to the memory cache.
+2. **In-Memory Cache (ETS)**:
+   - Stores the active route under key `app_name` and the list of all running pods under key `{:all_pods, app_name}` in the `:metadatadb` ETS table.
+   - Lookups are resolved in microseconds using `read_concurrency: true`.
+3. **`Discovery.Kubernetes.Reader`**:
+   - Serves client route allocation requests (`GET /api/endpoint?app_name=...`) directly from ETS, bypassing K8s API overhead.
 
 ---
 
-## 2. The New Real-Time Watcher Subsystem
+## ⚡ 2. Zero-Downtime Connection Draining
 
-We implemented the event-driven **Watch Informer** architecture:
-- **`Discovery.Kubernetes.Watcher`**:
-  - *Path*: [watcher.ex](file:///Users/ghostdsb/Documents/discovery/lib/discovery/kubernetes/watcher.ex)
-  - Connects to the Kubernetes Watch API using `/api/v1/namespaces/{namespace}/pods?watch=true` in `:kube_config` and `:service_account` modes.
-  - Receives push notifications from K8s the exact millisecond a pod’s status changes.
-  - Automatically filters out draining pods (`metadata.deletionTimestamp != nil`) and only promotes the **freshest, fully ready** pod IP, port, and image to the local cache.
-  - **Local Sandbox Mode**: In `:stub` mode, it dynamically monitors local folder files, letting developers test rolling updates locally without cluster dependencies.
-- **`Discovery.Kubernetes.Reader`**:
-  - *Path*: [reader.ex](file:///Users/ghostdsb/Documents/discovery/lib/discovery/kubernetes/reader.ex)
-  - Performs microsecond set lookups against the `:metadatadb` ETS table, achieving sub-millisecond read speeds on `GET /api/endpoint?app_name=...` calls.
-- **`Discovery.K8s.DeploymentController`**:
-  - *Path*: [deployment_controller.ex](file:///Users/ghostdsb/Documents/discovery/lib/discovery/k8s/deployment_controller.ex)
-  - Serves as a read-only bridge mapping active pod metadata into format-compatible structures, preserving 100% stability for the visual **Bridge Dashboard**.
+To update a stateful application with zero player disconnects, we use **Connection Draining**. When a new version is deployed:
+1. Kubernetes starts new pods.
+2. Once the new pods pass readiness probes, Discovery immediately promotes the new pod's suffix path (e.g. `/xc8rz`) to active routing. Any new client request to Discovery receives this suffix.
+3. The old pods enter a `Terminating` state, but **do not exit immediately**. Instead, they gracefully drain existing connections over a defined grace period (e.g. 40 minutes).
+
+### Draining Process in Stateful Applications:
+
+```
+[K8s Rollout triggered]
+          │
+          ▼
+┌───────────────────────────────┐
+│     New Pods Surged (v2)      │
+└──────────────┬────────────────┘
+               │
+               ▼ (Passes readiness probe)
+┌───────────────────────────────┐
+│ Discovery promotes v2 Suffix  │  ──► (All new connections route to v2)
+└──────────────┬────────────────┘
+               │
+               ▼ (K8s deletes old v1 pods)
+┌───────────────────────────────┐
+│   v1 Pods enter Terminating   │
+└──────────────┬────────────────┘
+               │
+               ▼ (Internal 15s routing propagation delay)
+┌───────────────────────────────┐
+│ v1 Server stops new listeners  │
+└──────────────┬────────────────┘
+               │
+               ▼ (Keeps existing WebSocket connections open)
+┌───────────────────────────────┐
+│ v1 Waits for activeWebsockets │
+│ to drop to 0 or 40min timeout │
+└───────────────────────────────┘
+```
 
 ---
 
-## 3. Verification & Validation Metrics
+## ⚡ 3. Operational Reference Blueprints
 
-### 🧪 1. Elixir 1.18 Strict Compilation Check
-The codebase compiles successfully with **zero warnings and zero errors**:
-```bash
-$ mix compile
-Compiling 1 file (.ex)
-Generated discovery app
-# (Successfully compiled warning-free!)
-```
+### ☸️ Stateful Pod Deployment Manifest (`deployment.yaml`)
+Configure your deployment strategy with `maxSurge: 100%` and `maxUnavailable: 0%` to ensure new capacity is fully online before old capacity is terminated, and set a large `terminationGracePeriodSeconds`:
 
-### 🧼 2. ExUnit Automated Tests
-Setting `:stub` sandbox mode during tests prevents network errors on local test runs. All tests are completely green:
-```bash
-$ mix test
-Running ExUnit with seed: 763429, max_cases: 16
-Excluding tags: [:skip]
-
-...
-Finished in 0.04 seconds
-3 tests, 0 failures
-```
-
-### 🎯 3. End-to-End Sandbox Verification
-We executed an integration script to verify that mock deployments are successfully written, picked up by the Watcher, and instantly mapped into our ETS memory database:
-```elixir
-# Trigger sandbox deploy
-{:ok, %{deployment_name: name}} = Discovery.Dashboard.Queries.create_deployment(%{
-  app_name: "chess-game",
-  app_image: "my-registry/chess-server:v1.2.0"
-})
-
-# Read-path lookup against ETS Cache
-Discovery.Kubernetes.Watcher.get_allocator("chess-game")
-```
-*Verification Output:*
-```text
-Triggered sandbox deploy for: chess-game-db2fce9e
-✅ Route resolved successfully!
-%{
-  port: 4000,
-  version: "stub",
-  ip: "127.0.0.1",
-  image: "discovery/chess-server:v1.1.0",
-  url: "chess.local/db2fce9e",
-  last_updated: ~U[2026-06-01 18:32:15Z],
-  replicas: 1,
-  created_at: ~U[2026-06-01 18:32:15Z]
-}
-```
-This confirms that client routing requests hitting `GET /api/endpoint?app_name=chess-game` will dynamically resolve the freshest non-draining server endpoint in microseconds!
-
----
-
-## 4. Operational Reference Blueprint
-
-### ☸️ Native Rolling Update Spec (`deploy.yaml`)
-To delegate connection-draining to Kubernetes, developers configure their deployments with `maxSurge`, `maxUnavailable`, and `terminationGracePeriodSeconds`:
 ```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-stateful-app
+  namespace: discovery
 spec:
-  replicas: 10
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 100%      # Surge a duplicate fleet to handle new players
-      maxUnavailable: 0%  # Keep all old games running safely
+      maxSurge: 100%
+      maxUnavailable: 0%
   template:
+    metadata:
+      labels:
+        app: my-stateful-app
     spec:
-      terminationGracePeriodSeconds: 2400 # Keep old pod alive for 40 mins
+      terminationGracePeriodSeconds: 2400 # Allow up to 40 minutes to drain
       containers:
-        - name: game-server
-          image: my-image:sha-1234
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 15"] # Propagate routing drain
+      - name: my-stateful-app
+        image: my-registry/my-app:v1.0.0
+        ports:
+        - containerPort: 8000
 ```
 
-### 🔇 OS SIGTERM Interception (Go Example)
-The game application must intercept signal 15 (`SIGTERM`), close the main listener instantly to reject new clients, and let active matches finish naturally:
+### 🔇 Application Signal Interception & Draining (Go Code Example)
+Because upgraded WebSocket connections are hijacked by the application, standard web server graceful shutdowns (like `http.Server.Shutdown`) do not track or wait for them. The application must track them using an atomic counter and intercept the `SIGTERM` signal:
+
 ```go
-// Listen for SIGTERM
-sigChan := make(chan os.Signal, 1)
-signal.Notify(sigChan, syscall.SIGTERM)
-<-sigChan
+package main
 
-// Instantly close listener to reject new sockets
-listener.Close()
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
+)
 
-// Wait up to 40 minutes for active games to conclude
-shutdownCtx, cancel := context.WithTimeout(context.Background(), 39*time.Minute)
-defer cancel()
-server.Shutdown(shutdownCtx)
+var activeWebsockets int64
+
+func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// ... upgrade connection ...
+	atomic.AddInt64(&activeWebsockets, 1)
+	defer atomic.AddInt64(&activeWebsockets, -1)
+	// ... process websocket ...
+}
+
+func main() {
+	server := &http.Server{Addr: ":8000"}
+
+	shutdownChan := make(chan os.Signal, 1)
+	signal.Notify(shutdownChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("Server ListenAndServe failed: %v", err)
+		}
+	}()
+
+	// Wait for OS shutdown signal
+	sig := <-shutdownChan
+	
+	// 1. Sleep to allow Kubernetes Service & Ingress routing tables to propagate
+	log.Printf("Received signal %v. Sleeping 15s...", sig)
+	time.Sleep(15 * time.Second)
+
+	// 2. Shut down listener to reject any new TCP connections
+	log.Println("Shutting down listener...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	server.Shutdown(ctx)
+
+	// 3. Wait for WebSocket connections to drain naturally
+	drainTimeout := time.After(40 * time.Minute)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-drainTimeout:
+			log.Println("Grace period expired. Forcefully exiting.")
+			return
+		case <-ticker.C:
+			if atomic.LoadInt64(&activeWebsockets) == 0 {
+				log.Println("All connections drained. Exiting clean.")
+				return
+			}
+		}
+	}
+}
 ```
+
+---
+
+## ⚡ 4. Visualizing Deployments in real-time
+
+The **Bridge Dashboard** (`http://discovery.localhost:8080`) provides a real-time visual representation of your deployment topologies:
+
+* **Sleek Dark Design**: Fits modern developer environments, reducing eye strain.
+* **Network Deployment Graph**:
+  - Displays the **Ingress Router** as the entrypoint.
+  - Generates visual connector nodes linking the Ingress directly to the active replica set.
+  - Highlights the **Active Promoted Route** node in vibrant pulsing emerald green with an `ACTIVE` tag.
+  - Displays **Draining/Standby Pods** with grey status tags, signifying they are gracefully serving legacy clients offline while refusing new entries.

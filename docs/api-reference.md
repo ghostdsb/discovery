@@ -38,7 +38,47 @@ curl -X GET "http://localhost:4000/api/endpoint?app_name=chess"
 
 ---
 
-## 3. List Registered Applications
+## 3. Query Watcher Status
+Query the real-time tracking status and active pod metadata resolved by the Watcher.
+
+* **Endpoint**: `GET /api/watcher/status`
+* **Query Parameters**:
+  * `app_name` (String, required): The name of the registered application.
+
+### Example Request:
+```bash
+curl -X GET "http://localhost:4000/api/watcher/status?app_name=chess"
+```
+
+### Example Response (Active App with healthy pod):
+```json
+{
+  "active": true,
+  "app_name": "chess",
+  "details": {
+    "created_at": "2026-06-03T12:12:22Z",
+    "image": "my-registry/chess-server:v1.0.0",
+    "ip": "10.42.0.30",
+    "port": 8000,
+    "url": "chess.example.com/gj6dm"
+  },
+  "tracked": true
+}
+```
+
+### Example Response (Inactive App / No pods running):
+```json
+{
+  "active": false,
+  "app_name": "chess",
+  "details": null,
+  "tracked": true
+}
+```
+
+---
+
+## 4. List Registered Applications
 Retrieves a list of all application boundaries currently registered for tracking.
 
 * **Endpoint**: `GET /api/apps`
@@ -63,7 +103,7 @@ curl -X GET "http://localhost:4000/api/apps"
 
 ---
 
-## 4. Register a New Application
+## 5. Register a New Application
 Add an application name label to the directory. Discovery will begin watching the cluster namespaces for pods matching this label.
 
 * **Endpoint**: `POST /api/app`
@@ -87,7 +127,7 @@ curl -X POST "http://localhost:4000/api/app" \
 
 ---
 
-## 5. Deregister an Application
+## 6. Deregister an Application
 Remove an application boundary and evict all active routing paths from the registry.
 
 * **Endpoint**: `DELETE /api/app`

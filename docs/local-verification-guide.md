@@ -18,108 +18,12 @@ Discovery provides highly performant API endpoints to track app domains, check r
 
 ---
 
-## 🛠️ Step 1: Testing Watcher APIs locally (Sandbox Mode)
-
-Before deploying to Kubernetes, you can verify all these APIs in **Sandbox/Stub Mode** offline on your host machine.
-
-### 1. Boot up the Discovery Server:
-```bash
-mix phx.server
-```
-
-### 2. Register an App:
-```bash
-curl -X POST "http://localhost:4000/api/app" \
-  -H "Content-Type: application/json" \
-  -d '{"app_name": "chess"}'
-```
-*Response:*
-```json
-{"app_name":"chess"}
-```
-
-### 3. List Tracked Apps:
-```bash
-curl -X GET "http://localhost:4000/api/apps"
-```
-*Response:*
-```json
-{
-  "apps": [
-    {
-      "app_name": "chess",
-      "deployments": 0,
-      "url": "http://localhost:4000/api/endpoint?app_name=chess"
-    }
-  ]
-}
-```
-
-### 4. Query Watcher Status (New Endpoint!):
-Query whether the watcher has successfully discovered active pod instances or stub deployments.
-```bash
-curl -X GET "http://localhost:4000/api/watcher/status?app_name=chess"
-```
-*Response (Inactive - no pods running yet):*
-```json
-{
-  "app_name": "chess",
-  "tracked": true,
-  "active": false,
-  "details": null
-}
-```
-
-### 5. Simulate a Pod Deployment:
-To simulate a pod in sandbox mode, we trigger a mock deployment which writes descriptor files to `data/discovery/chess/`:
-```bash
-curl -X POST "http://localhost:4000/api/deploy-build" \
-  -H "Content-Type: application/json" \
-  -d '{"app_name": "chess", "app_image": "chess-game:v1.0"}'
-```
-
-Now, query the **Watcher Status** again:
-```bash
-curl -X GET "http://localhost:4000/api/watcher/status?app_name=chess"
-```
-*Response (Active!):*
-```json
-{
-  "app_name": "chess",
-  "tracked": true,
-  "active": true,
-  "details": {
-    "ip": "127.0.0.1",
-    "port": 4000,
-    "created_at": "2026-06-02T13:45:00Z",
-    "version": "stub",
-    "url": "chess.local/chess-build-9f8e7d",
-    "image": "chess-game:v1.0",
-    "replicas": 1,
-    "last_updated": "2026-06-02T13:45:00Z"
-  }
-}
-```
-
-### 6. Query client endpoint:
-```bash
-curl -X GET "http://localhost:4000/api/endpoint?app_name=chess"
-```
-*Response:*
-```json
-{
-  "endpoint": "chess.local/chess-build-9f8e7d"
-}
-```
-
----
-
-## 🐳 Step 2: Build & Deploy to a Local k3d Cluster
+## 🐳 Step 1: Build & Deploy to a Local k3d Cluster
 
 Follow these steps to package Discovery as a container, import it into k3d, and run it in cluster mode.
 
 ### 1. Build the Docker Image Locally
-Run the Docker build command using our optimized Alpine build script:
+Run the Docker build command using the development Dockerfile:
 ```bash
 docker build -f dev.Dockerfile -t discovery-app:latest .
 ```
@@ -155,7 +59,7 @@ discovery-app-798cf647d6-x8r7z   1/1     Running   0          10s
 
 ---
 
-## 🧪 Step 3: End-to-End Live Cluster Verification
+## 🧪 Step 2: End-to-End Live Cluster Verification
 
 To check if the watcher is successfully streaming and registering pods dynamically in k3d:
 

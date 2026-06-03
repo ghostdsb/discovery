@@ -1,53 +1,80 @@
 # Production Deployment Guide for Discovery
 
-To make Discovery production-ready as a Jenkins alternative for GitOps, follow these steps:
+This guide details how to deploy **Discovery** in a production environment as a high-speed dynamic service directory and routing allocator.
 
-## 1. Security Configuration
+---
+
+## 🔒 1. Security Configuration
 
 ### API Token
-Ensure you set a strong `API_TOKEN` environment variable. This token must be passed in the `x-api-token` header for all CI deployment requests.
+For actions that alter registry listings (e.g. creating/deleting tracked apps via HTTP), secure the endpoints by specifying a strong `API_TOKEN` environment variable. Clients must include this token via the `x-api-token` header:
+- Header: `x-api-token: <YOUR_SECURE_API_TOKEN>`
 
 ### CORS Origins
-Restrict CORS origins in your production environment by setting the `CORS_ORIGINS` environment variable (comma-separated list of allowed domains).
+Restrict CORS origins in your production environment by setting the `CORS_ORIGINS` environment variable (comma-separated list of allowed domains). This is handled automatically by the endpoint routers to prevent cross-origin scripting issues.
 
-## 2. Kubernetes Integration
+---
 
-### Service Account
-Discovery needs a Service Account with permissions to manage Deployments, Services, ConfigMaps, and Ingresses in its namespace (and other namespaces if configured).
+## ☸️ 2. Kubernetes RBAC Configuration
 
-Example ClusterRole:
+To monitor pods in real-time, Discovery must run in **In-Cluster Mode** (`connection_method: :service_account`). The container's default ServiceAccount must be assigned sufficient RBAC permissions to `get`, `list`, and `watch` pods within the target namespace (e.g., `discovery`).
+
+Apply the following RBAC manifest in production:
+
 ```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: discovery-manager
+  name: discovery-service-account
+  namespace: discovery
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: discovery-pod-watcher-role
+  namespace: discovery
 rules:
-- apiGroups: ["", "apps", "networking.k8s.io"]
-  resources: ["deployments", "services", "configmaps", "ingresses", "namespaces"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: discovery-watcher-binding
+  namespace: discovery
+subjects:
+- kind: ServiceAccount
+  name: discovery-service-account
+  namespace: discovery
+roleRef:
+  kind: Role
+  name: discovery-pod-watcher-role
+  apiGroup: rbac.authorization.k8s.io
 ```
 
-### Git Access
-Discovery needs access to your GitOps repository. You can use a GitHub Personal Access Token (PAT) via the `GITHUB_REPO_TOKEN` environment variable.
+*Ensure your Discovery deployment manifest references `serviceAccountName: discovery-service-account`.*
 
-## 3. GitOps Repository Structure
+---
 
-Discovery supports two main layouts:
-- `env_first`: `{env}/{app}/{deployment-id}/...` (Default for CI flow)
-- `apps_first`: `apps/{app}/{deployment-id}/...`
+## ⚙️ 3. Environment Variables Config
 
-Ensure your GitOps repository is initialized and Discovery has write access to it.
+Configure your production deployment with the following environment variables:
 
-## 4. Monitoring & Logs
+| Variable | Description | Example |
+|---|---|---|
+| `PORT` | HTTP Port for the Phoenix web server | `4000` |
+| `API_TOKEN` | Auth token for base registry API routes | `super-secret-production-token-123` |
+| `BASE_URL` | Base URL of Discovery for dashboard references | `http://discovery.mycompany.internal` |
+| `KUBERNETES_SERVICE_HOST` | Automatically set by K8s in-cluster, overridden if needed | `10.96.0.1` |
+| `KUBERNETES_SERVICE_PORT_HTTPS` | Automatically set by K8s in-cluster, overridden if needed | `443` |
 
-Discovery uses Elixir's Logger. In production, ensure logs are forwarded to a centralized logging system (e.g., EFK stack, Datadog, CloudWatch).
+---
 
-The internal state is cached in ETS tables (`:metadatadb`, `:idempotencydb`). Note that these are ephemeral and will be cleared on restart. Discovery reconciles state by polling Kubernetes on startup.
+## 📊 4. Monitoring & High Availability
 
-## 5. CI Integration
-
-Use the provided `.github/workflows/deploy-template.yml` as a starting point for your application repositories. 
-
-Key API endpoints for CI:
-- `POST /api/ci/deploy`: Trigger a new deployment.
-- `GET /api/ci/status?deployment_name=...`: Check deployment status.
+- **Stateless Lifecycle**: Discovery caches all pod registry details in an ephemeral, high-concurrency memory cache (`:metadatadb` ETS table). If the Discovery container restarts, it automatically re-syncs and repopulates the ETS database from the Kubernetes API during bootstrap.
+- **Health Checks**: Configure Kubernetes probes to monitor the health of Discovery:
+  - **Liveness Probe**: `GET /ping` on port `4000` (responds with `pong`).
+  - **Readiness Probe**: `GET /ping` on port `4000`.
+- **Logs**: Discovery outputs structured JSON console logs. Route stdout to a centralized aggregator (e.g., Fluentbit, Loki, Datadog) to track client allocation events and replica changes.
