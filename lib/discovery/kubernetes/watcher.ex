@@ -40,22 +40,18 @@ defmodule Discovery.Kubernetes.Watcher do
 
     case Application.get_env(:discovery, :connection_method) do
       :stub ->
-        Logger.info("Watcher running in :stub sandbox mode (monitoring data/discovery/)")
-        send(self(), :stub_poll)
+        Logger.info("Watcher running in passive sandbox/stub mode.")
         {:ok, %{mode: :stub}}
+
+      :test ->
+        Logger.info("Watcher running in test mode.")
+        {:ok, %{mode: :test}}
 
       _ ->
         Logger.info("Watcher running in cluster mode (connecting to K8s Watch API)")
         send(self(), :bootstrap)
         {:ok, %{mode: :k8s, watcher_ref: nil, resource_version: "0"}}
     end
-  end
-
-  @impl true
-  def handle_info(:stub_poll, state) do
-    poll_stub_data()
-    Process.send_after(self(), :stub_poll, 2_000)
-    {:noreply, state}
   end
 
   @impl true
@@ -251,24 +247,9 @@ defmodule Discovery.Kubernetes.Watcher do
   end
 
   defp get_ingress_url_fallback(app_name, pod_name) do
-    ingress_path = "data/discovery/#{app_name}/ingress.yml"
     parts = String.split(pod_name, "-")
     path = List.last(parts)
-
-    case File.exists?(ingress_path) do
-      true ->
-        case YamlElixir.read_from_file(ingress_path, atoms: false) do
-          {:ok, ingress_data} ->
-            [rule | _rules] = ingress_data["spec"]["rules"]
-            "#{rule["host"]}/#{path}"
-
-          _ ->
-            "#{app_name}.example.com/#{path}"
-        end
-
-      false ->
-        "#{app_name}.example.com/#{path}"
-    end
+    "#{app_name}.example.com/#{path}"
   end
 
   defp parse_timestamp(nil), do: DateTime.utc_now()
@@ -279,74 +260,7 @@ defmodule Discovery.Kubernetes.Watcher do
     end
   end
 
-  # --- Stub/Sandbox Polling Implementation ---
 
-  defp poll_stub_data do
-    root = "data/discovery"
-
-    if File.dir?(root) do
-      apps =
-        File.ls!(root)
-        |> Enum.filter(fn name -> File.dir?(Path.join(root, name)) and name != "namespace" end)
-
-      Enum.each(apps, fn app_name ->
-        app_dir = Path.join(root, app_name)
-
-        deployments =
-          File.ls!(app_dir)
-          |> Enum.filter(fn item ->
-            File.dir?(Path.join(app_dir, item)) and String.contains?(item, "#{app_name}-")
-          end)
-
-        case deployments do
-          [] ->
-            :ets.delete(Utils.metadata_db(), app_name)
-
-          _ ->
-            freshest_depl =
-              deployments
-              |> Enum.sort(:desc)
-              |> List.first()
-
-            depl_dir = Path.join(app_dir, freshest_depl)
-            deploy_yaml_path = Path.join(depl_dir, "deploy.yml")
-            deploy_yaml_path = if File.exists?(deploy_yaml_path), do: deploy_yaml_path, else: Path.join(depl_dir, "deployment.yml")
-
-            {image, replicas} =
-              case File.exists?(deploy_yaml_path) do
-                true ->
-                  case YamlElixir.read_from_file(deploy_yaml_path, atoms: false) do
-                    {:ok, deploy_map} ->
-                      container = get_in(deploy_map, ["spec", "template", "spec", "containers"]) |> List.first() || %{}
-                      image = container["image"] || "stub-image:latest"
-                      replicas = get_in(deploy_map, ["spec", "replicas"]) || 1
-                      {image, replicas}
-
-                    _ ->
-                      {"stub-image:latest", 1}
-                  end
-
-                false ->
-                  {"stub-image:latest", 1}
-              end
-
-            ingress_url = get_ingress_url_fallback(app_name, freshest_depl)
-
-            :ets.insert(Utils.metadata_db(), {app_name, %{
-              pod_name: freshest_depl,
-              ip: "127.0.0.1",
-              port: 4000,
-              created_at: DateTime.utc_now(),
-              version: "stub",
-              url: ingress_url,
-              image: image,
-              replicas: replicas,
-              last_updated: DateTime.utc_now()
-            }})
-        end
-      end)
-    end
-  end
 
   defp k8s_api_base_url do
     System.get_env("KUBERNETES_SERVICE_HOST")

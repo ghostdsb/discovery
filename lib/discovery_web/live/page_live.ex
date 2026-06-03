@@ -13,9 +13,7 @@ defmodule DiscoveryWeb.PageLive do
        apps: get_apps(),
        selected_app: nil,
        create_modal_display: "none",
-       deploy_modal_display: "none",
        create_app_warning: "none",
-       deploy_app_warning: "none",
        modal_input?: true,
        selected_app_details: %{}
      )}
@@ -50,23 +48,6 @@ defmodule DiscoveryWeb.PageLive do
   end
 
   @impl true
-  def handle_event("create-deployment", %{"app-image" => app_image} = _params, socket) do
-    if socket.assigns.modal_input? do
-      %{
-        app_name: socket.assigns.selected_app,
-        app_image: app_image
-      }
-      |> create_deployment()
-    end
-
-    socket =
-      socket
-      |> assign(modal_input?: false)
-
-    {:noreply, socket}
-  end
-
-  @impl true
   def handle_event("select-app", %{"app" => app_name} = _params, socket) do
     selected_app_details =
       app_name
@@ -96,29 +77,11 @@ defmodule DiscoveryWeb.PageLive do
   end
 
   @impl true
-  def handle_event("show-deploy-modal", _params, socket) do
-    display =
-      case socket.assigns.deploy_modal_display do
-        "none" -> "block"
-        "block" -> "none"
-        _ -> "none"
-      end
-
-    socket =
-      socket
-      |> assign(deploy_modal_display: display, modal_input?: true)
-
-    {:noreply, socket}
-  end
-
-  @impl true
   def handle_event("hide-modal", _params, socket) do
     socket =
       socket
       |> assign(
         create_modal_display: "none",
-        deploy_modal_display: "none",
-        deploy_app_warning: "none",
         modal_input?: true
       )
 
@@ -134,33 +97,6 @@ defmodule DiscoveryWeb.PageLive do
     {:noreply, socket}
   end
 
-  @impl true
-  def handle_info(
-        {"deployment-created", %{status: deployment_status, app_name: app_name}},
-        socket
-      ) do
-    socket =
-      case deployment_status do
-        {:ok, _app_id} ->
-          selected_app_details =
-            app_name
-            |> DashboardQueries.get_deployment_data()
-
-          assign(
-            socket,
-            deploy_modal_display: "none",
-            deploy_app_warning: "none",
-            selected_app_details: selected_app_details,
-            apps: get_apps()
-          )
-
-        {:error, _reason} ->
-          socket |> assign(deploy_app_warning: "block")
-      end
-
-    {:noreply, socket}
-  end
-
   ## HELPER FUNCTIONS ##
   defp get_apps do
     DashboardQueries.get_apps()
@@ -171,13 +107,5 @@ defmodule DiscoveryWeb.PageLive do
     |> DashboardQueries.create_app()
   end
 
-  defp create_deployment(%{app_name: app_name} = deployment_details) do
-    deployment_status = DashboardQueries.create_deployment(deployment_details)
 
-    Process.send_after(
-      self(),
-      {"deployment-created", %{status: deployment_status, app_name: app_name}},
-      1000
-    )
-  end
 end
