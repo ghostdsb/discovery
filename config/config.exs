@@ -31,7 +31,8 @@ config :discovery,
   #   - :kube_config     => Local Cluster Mode. Loads cluster context from the local "~/.kube/config" file.
   connection_method: :service_account,
   api_token: System.get_env("API_TOKEN") || "discovery-secret-token",
-  base_url: System.get_env("BASE_URL") || "http://localhost:4000"
+  base_url: System.get_env("BASE_URL") || "http://localhost:4000",
+  watch_namespace: System.get_env("WATCH_NAMESPACE") || "all"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

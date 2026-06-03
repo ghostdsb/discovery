@@ -241,23 +241,32 @@
                   </div>
                 </div>
 
-                <!-- Info Grid -->
-                <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px] font-mono text-slate-400 py-3 border-t border-solid-800 mb-3">
-                  <div class="flex justify-between border-b border-solid-800/50 pb-1">
-                    <span class="text-slate-600">IP:</span>
-                    <span class="text-slate-300"><%= deployment["ip"] %></span>
-                  </div>
-                  <div class="flex justify-between border-b border-solid-800/50 pb-1">
-                    <span class="text-slate-600">Port:</span>
-                    <span class="text-slate-300"><%= deployment["port"] %></span>
-                  </div>
-                  <div class="flex justify-between col-span-2">
-                    <span class="text-slate-600">Image:</span>
-                    <span class="text-slate-300 truncate w-40 text-right cursor-help" title="<%= deployment["image"] %>">
-                      <%= String.split(deployment["image"], "/") |> List.last() %>
-                    </span>
-                  </div>
-                </div>
+                 <!-- Info Grid -->
+                 <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px] font-mono text-slate-400 py-3 border-t border-solid-800 mb-3">
+                   <div class="flex justify-between border-b border-solid-800/50 pb-1">
+                     <span class="text-slate-600">IP:</span>
+                     <span class="text-slate-300"><%= deployment["ip"] %></span>
+                   </div>
+                   <div class="flex justify-between border-b border-solid-800/50 pb-1">
+                     <span class="text-slate-600">Port:</span>
+                     <span class="text-slate-300"><%= deployment["port"] %></span>
+                   </div>
+                   <div class="flex justify-between border-b border-solid-800/50 pb-1">
+                     <span class="text-slate-600">Namespace:</span>
+                     <span class="text-slate-300"><%= Map.get(deployment, "namespace", "unknown") %></span>
+                   </div>
+                   <div class="flex justify-between border-b border-solid-800/50 pb-1">
+                     <!-- Spacer col -->
+                     <span></span>
+                     <span></span>
+                   </div>
+                   <div class="flex justify-between col-span-2">
+                     <span class="text-slate-600">Image:</span>
+                     <span class="text-slate-300 truncate w-40 text-right cursor-help" title="<%= deployment["image"] %>">
+                       <%= String.split(deployment["image"], "/") |> List.last() %>
+                     </span>
+                   </div>
+                 </div>
 
                 <!-- Dynamic route details / test button -->
                 <div class="flex items-center justify-between gap-3 pt-1">

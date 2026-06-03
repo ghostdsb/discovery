@@ -83,7 +83,8 @@ defmodule Discovery.K8s.DeploymentController do
                 "replicas" => 1,
                 "ip" => details.ip,
                 "port" => details.port,
-                "active" => true
+                "active" => true,
+                "namespace" => Map.get(details, :namespace, "unknown")
               }
             }
         end
@@ -104,7 +105,8 @@ defmodule Discovery.K8s.DeploymentController do
             "replicas" => 1,
             "ip" => pod.ip,
             "port" => pod.port,
-            "active" => pod.pod_name == active_pod_name
+            "active" => pod.pod_name == active_pod_name,
+            "namespace" => Map.get(pod, :namespace, "unknown")
           })
         end)
     end

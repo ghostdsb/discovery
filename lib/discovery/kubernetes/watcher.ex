@@ -8,7 +8,7 @@ defmodule Discovery.Kubernetes.Watcher do
 
   alias Discovery.Utils
 
-  @k8s_ns "discovery"
+  # Namespace is read dynamically from config
   @http_client HTTPoison
 
   # --- Client API ---
@@ -113,8 +113,29 @@ defmodule Discovery.Kubernetes.Watcher do
 
   # --- Helper Pipeline Logic ---
 
+  defp k8s_pods_url(watch?, resource_version \\ nil) do
+    ns = Application.get_env(:discovery, :watch_namespace, "all")
+    base = k8s_api_base_url()
+
+    path =
+      if ns == "all" do
+        "/api/v1/pods"
+      else
+        "/api/v1/namespaces/#{ns}/pods"
+      end
+
+    query =
+      cond do
+        watch? && resource_version -> "?watch=true&resourceVersion=#{resource_version}"
+        watch? -> "?watch=true"
+        true -> ""
+      end
+
+    base <> path <> query
+  end
+
   defp fetch_k8s_pods do
-    url = k8s_api_base_url() <> "/api/v1/namespaces/#{@k8s_ns}/pods"
+    url = k8s_pods_url(false)
     headers = k8s_auth_headers()
     opts = k8s_request_options()
 
@@ -125,7 +146,7 @@ defmodule Discovery.Kubernetes.Watcher do
   end
 
   defp spawn_watch_stream(resource_version) do
-    url = k8s_api_base_url() <> "/api/v1/namespaces/#{@k8s_ns}/pods?watch=true&resourceVersion=#{resource_version}"
+    url = k8s_pods_url(true, resource_version)
     headers = k8s_auth_headers()
     opts = k8s_request_options() ++ [stream_to: self(), recv_timeout: :infinity]
 
@@ -195,6 +216,7 @@ defmodule Discovery.Kubernetes.Watcher do
   defp to_pod_struct(pod) do
     app_name = pod["metadata"]["labels"]["app"]
     pod_name = pod["metadata"]["name"]
+    namespace = pod["metadata"]["namespace"] || "unknown"
     ip = pod["status"]["podIP"] || "127.0.0.1"
     port = get_in(pod, ["spec", "containers"]) |> List.first() |> get_in(["ports"]) |> List.first() |> Map.get("containerPort") || 4000
     created_at = parse_timestamp(pod["metadata"]["creationTimestamp"])
@@ -204,6 +226,7 @@ defmodule Discovery.Kubernetes.Watcher do
 
     %{
       pod_name: pod_name,
+      namespace: namespace,
       ip: ip,
       port: port,
       created_at: created_at,
