@@ -1,87 +1,108 @@
 # Getting Started
 
-This guide walks you through setting up your local machine to run and test Discovery. By the end of this guide, you will have a local Kubernetes cluster running alongside the Discovery development server, ready to receive and trigger deployments.
+This guide walks you through setting up your local machine to run, test, and develop with **Discovery** in Sandbox Mode. By the end of this guide, you will have a local service directory running, ready to register applications, monitor active routes, and answer microsecond client allocation queries.
 
 ---
 
-## 🏗️ 1. Setup Your Local Kubernetes Cluster
+## ⚡ 1. Start the Discovery Server Locally
 
-Discovery orchestrates real Kubernetes manifests. To test it locally, you need a local Kubernetes cluster. We recommend **k3d** because it runs incredibly fast inside Docker containers.
-
-We provide a convenient script `k3d_setup.sh` that automates this entire process.
-
-### Running the Setup Script:
-1. Ensure Docker is running on your machine.
-2. Ensure you have `kubectl` and `k3d` installed (e.g., `brew install k3d kubectl` on macOS).
-3. Run the script:
-   ```bash
-   chmod +x k3d_setup.sh
-   ./k3d_setup.sh
-   ```
-
-### What does this script do?
-* **Creates a local registry** named `discovery-registry` running at `localhost:5001`. This allows you to push images locally without needing to authenticate with Docker Hub.
-* **Provisions a K3d cluster** named `discovery-cluster` hooked up to your local registry.
-* **Installs the Ingress-Nginx controller**, which Discovery uses to route WebSocket client connections dynamically to specific pods.
-* **Installs ArgoCD** inside the `argocd` namespace, preparing the cluster for GitOps workflows.
-
----
-
-## ⚡ 2. Start the Discovery Server
-
-Discovery is written in Elixir using the Phoenix Framework.
+Discovery is built using Elixir and the Phoenix Framework. Our Sandbox Mode (`connection_method: :stub`) runs completely offline with **zero cluster or Docker dependencies**, allowing you to test everything in seconds!
 
 ### Step 1: Install Dependencies
-Install Erlang/Elixir dependencies and compile them:
+Ensure you have Elixir and Node.js installed, then install Erlang/Elixir dependencies:
 ```bash
 mix setup
 ```
 
-### Step 2: Configure the Environment
-Discovery uses standard environment variables for configuration. We provide a `dev.env` template. Create your local configuration:
+### Step 2: Compile Assets
+Compile the TailwindCSS/Webpack frontend styles for the Bridge Dashboard:
 ```bash
-cp dev.env .env
-source .env
+mix assets.deploy
 ```
 
 ### Step 3: Run the Development Server
-Launch the server inside an interactive Elixir session (`iex`):
+Launch the server:
 ```bash
+mix phx.server
+# or run inside an interactive Elixir shell
 iex -S mix phx.server
 ```
+*Discovery will boot up in sandbox mode, outputting database initialization logs:*
+`[info] Watcher running in :stub sandbox mode (monitoring data/discovery/)`
 
-Once running, you can access the visual web dashboard (Bridge) by opening [http://localhost:4000](http://localhost:4000) in your browser.
+Once running, you can access the visual web dashboard by opening [http://localhost:4000](http://localhost:4000) in your browser.
 
 ---
 
-## 🎮 3. Deploy Your First App
+## 🎮 2. Register Your First Application
 
-Let's test if everything is working by deploying an app manually using Discovery's API.
+Let's register an application boundary inside Discovery's registry so that the watcher begins tracking it.
 
-1. **Verify your kubectl context**: Ensure kubectl is pointed to the K3d cluster:
-   ```bash
-   kubectl config use-context k3d-discovery-cluster
-   ```
-2. **Trigger a deploy**: We can trigger a deployment via curl or from the dashboard. Let's make an API call to deploy a dummy game server:
-   ```bash
-   curl -X POST http://localhost:4000/api/app \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "my-game-server"
-     }'
-   ```
-3. **Deploy a build**:
-   ```bash
-   curl -X POST http://localhost:4000/api/deploy-build \
-     -H "Content-Type: application/json" \
-     -d '{
-       "app_name": "my-game-server",
-       "image": "nginx:alpine"
-     }'
-   ```
-4. **Check the cluster**: Inspect the running pods in your cluster to see the deployed server:
-   ```bash
-   kubectl get pods -n discovery
-   ```
+Trigger a registration call using curl:
+```bash
+curl -X POST "http://localhost:4000/api/app" \
+  -H "Content-Type: application/json" \
+  -d '{"app_name": "chess"}'
+```
 
-You are now successfully set up for local development and deployment!
+---
+
+## 🚀 3. Trigger a Mock Deployment
+
+In local Sandbox Mode, you can trigger mock deployments either by making a REST API call or by using the **Deploy** button directly inside the Bridge Dashboard UI.
+
+Run this curl command to simulate a rolling update trigger:
+```bash
+curl -X POST "http://localhost:4000/api/ci/deploy" \
+  -H "Content-Type: application/json" \
+  -H "x-api-token: discovery-secret-token" \
+  -d '{
+    "app_name": "chess",
+    "image": "my-registry/chess-server:sha-9f8e7d",
+    "environment": "production",
+    "idempotency_key": "build-9f8e7d",
+    "config_ref": {
+      "app_host": "chess.local",
+      "app_target_port": 80,
+      "app_container_port": 4000
+    }
+  }'
+```
+
+#### 📦 What Happens Behind the Scenes:
+In local Sandbox Mode (`connection_method: :stub`), Discovery bypasses the live Kubernetes cluster and simulates a deployment by writing mock files to your local disk at:
+`data/discovery/apps/chess/chess-build-9f8e7d/`
+
+This is strictly a local sandbox simulator designed to let you test the Watcher's pod-discovery and routing logic without a Kubernetes cluster. In production, Discovery **does not** generate or write manifests; instead, it purely streams events from the live Kubernetes API server where manifests are applied directly by your CI/CD pipeline.
+
+---
+
+## 🔍 4. Verify & Allocate Route
+
+Our dynamic Watcher process detects the local sandbox files, resolves the ingress endpoint from `data/discovery/chess/ingress.yml`, and updates the concurrent ETS routing cache.
+
+Query the Discovery API to fetch the active game server URL:
+```bash
+curl -X GET "http://localhost:4000/api/endpoint?app_name=chess"
+```
+
+#### 📥 Expected JSON Response:
+```json
+{
+  "endpoint": "chess.local/build-9f8e7d"
+}
+```
+
+---
+
+## 📊 5. View in Dashboard
+Open `http://localhost:4000` in your web browser. You will see **`chess`** listed as healthy, showing `1` active deployment. Click on the name to view the container image, replicas, last-updated timestamp, and the dynamic router URL `chess.local/build-9f8e7d`!
+
+---
+
+## ☸️ What's Next?
+When you are ready to transition from the sandbox to a live Kubernetes cluster, configure the cluster connection modes and set up your local k3d development cluster:
+- **[Kubernetes Connection Modes & Local k3d Setup Guide](kubernetes-connection-modes.md)**
+- **[Testing with Local k3d Cluster (Live Cluster Mode)](local-k3d-testing.md)**
+- **[Testing with Local K8s in Docker Compose (Live Cluster Mode)](local-k3s-compose.md)**
+- **[Full Service Directory & Session Draining Guide](service-directory-guide.md)**

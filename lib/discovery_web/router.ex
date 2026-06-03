@@ -12,12 +12,8 @@ defmodule DiscoveryWeb.Router do
   end
 
   pipeline :api do
-    # plug CORSPlug, origin: {DiscoveryWeb.Router, :cors_origins, []}
     plug :accepts, ["json"]
-  end
-
-  pipeline :ci_auth do
-    plug DiscoveryWeb.Plugs.ApiAuth
+    plug CORSPlug, origin: "*"
   end
 
   def cors_origins do
@@ -32,43 +28,18 @@ defmodule DiscoveryWeb.Router do
 
   get "/ping", DiscoveryWeb.BaseController, :ping, log: false
 
-  # Other scopes may use custom stacks.
+  # High-speed API endpoints
   scope "/api", DiscoveryWeb do
     pipe_through :api
+
     get "/endpoint", EndpointController, :get_endpoint
-
     get "/apps", BaseController, :list_app
-    get "/:app_name/deployments", BaseController, :list_app_deployments
     post "/app", BaseController, :create_app
-    post "/deploy-build", BaseController, :deploy_build
     delete "/app", BaseController, :delete_app
-    delete "/deployment", BaseController, :delete_deployment
-
-    # GitOps endpoints
-    post "/gitops/update-image", GitOpsController, :update_image
-    post "/gitops/create-app", GitOpsController, :create_app
-    get "/gitops/apps", GitOpsController, :list_apps
-    get "/gitops/image-tag", GitOpsController, :get_image_tag
-    post "/gitops/sync", GitOpsController, :sync_to_gitops
-    post "/gitops/sync-app", GitOpsController, :sync_app_to_gitops
-    post "/gitops/sync-from-discovery", GitOpsController, :sync_from_discovery_to_gitops
-    post "/gitops/sync-app-from-discovery", GitOpsController, :sync_app_from_discovery_to_gitops
-
-    # CI endpoints
-    scope "/ci" do
-      pipe_through :ci_auth
-      post "/deploy", CiController, :deploy
-      get "/status", CiController, :status
-    end
+    get "/watcher/status", BaseController, :check_watcher_status
   end
 
   # Enables LiveDashboard only for development
-  #
-  # If you want to use the LiveDashboard in production, you should put
-  # it behind authentication and allow only admins to access it.
-  # If your application does not have an admins-only section yet,
-  # you can use Plug.BasicAuth to set up some basic authentication
-  # as long as you are also using SSL (which you should anyway).
   if Mix.env() in [:dev, :test] do
     import Phoenix.LiveDashboard.Router
 

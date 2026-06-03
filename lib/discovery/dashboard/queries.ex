@@ -1,17 +1,13 @@
 defmodule Discovery.Dashboard.Queries do
   @moduledoc """
-  Manages the communications of liveview with the backend.
+  Manages the communications of liveview with the backend read layers.
   """
   alias Discovery.K8s.DeploymentController
-  alias Discovery.Orchestrator.Controller
-  alias Discovery.Deploy.Utils, as: DeployUtils
 
   @doc """
-  Fetches the deployment data of an app from metadatadb ets
-
-  Returns list()
+  Fetches the active deployment data of an app from metadatadb ets
   """
-  @spec get_deployment_data(String.t()) :: list
+  @spec get_deployment_data(String.t()) :: list()
   def get_deployment_data(app_name) do
     app_name
     |> DeploymentController.get_deployment_data()
@@ -22,11 +18,9 @@ defmodule Discovery.Dashboard.Queries do
   end
 
   @doc """
-  Fetches list of all apps deleted so far from bridgedb ets
-
-  Returns list()
+  Fetches list of all apps tracked in bridgedb ets
   """
-  @spec get_apps :: list
+  @spec get_apps :: list()
   def get_apps do
     DeploymentController.get_apps()
     |> Enum.map(fn app_name ->
@@ -44,9 +38,7 @@ defmodule Discovery.Dashboard.Queries do
   end
 
   @doc """
-  Inserts the app name into bridgedb ets
-
-  Returns {:ok, :app_inserted} | {:error, :app_present}
+  Inserts the app name into bridgedb ets to begin registry tracking
   """
   @spec create_app(String.t()) :: {:ok, :app_inserted} | {:error, :app_present}
   def create_app(app_name) do
@@ -55,40 +47,70 @@ defmodule Discovery.Dashboard.Queries do
   end
 
   @doc """
-  Deletes
-  - app name from bridgedb ets
-  - app from metadatadb ets
-  - deletes k8s resources
-  - deletes app folder in minikube/namespace
+  Deletes an app name and its associated endpoints from the registry
   """
-  @spec delete_app(String.t()) :: {:ok, list()} | {:error, binary(), any()}
+  @spec delete_app(String.t()) :: {:ok, list()} | {:error, any()}
   def delete_app(app_name) do
     app_name
     |> DeploymentController.delete_app()
   end
 
   @doc """
-  Creates or updates an app deployment
-
-  Returns {:ok, term} | {:error, reason}
+  Creates or updates a mock deployment in local sandbox mode.
   """
-  @spec create_deployment(DeployUtils.t()) :: {:ok, term()} | {:error, term()}
-  def create_deployment(deployment_details) do
-    deployment_details
-    |> Controller.create()
-  end
+  @spec create_deployment(map()) :: {:ok, map()} | {:error, term()}
+  def create_deployment(params) do
+    app_name = params.app_name
+    image = params.app_image || "stub-image:latest"
+    uid = Discovery.Utils.get_uid()
+    deployment_name = "#{app_name}-#{uid}"
 
-  @doc """
-  Deletes an app deployment
+    # In sandbox/stub mode, write mock files to data/discovery/ so watcher picks it up.
+    if Application.get_env(:discovery, :connection_method) == :stub do
+      app_dir = "data/discovery/#{app_name}"
+      depl_dir = "#{app_dir}/#{deployment_name}"
+      File.mkdir_p!(depl_dir)
 
-  Returns {:ok, term} | {:error, reason}
-  """
-  @spec delete_deployment(String.t()) :: {:ok, term()} | {:error, term()}
-  def delete_deployment(deployment_name) do
-    parts = String.split(deployment_name, "-")
-    uid = List.last(parts)
-    app_name = Enum.slice(parts, 0..-2//1) |> Enum.join("-")
+      # Write deployment yml
+      deploy_content = """
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: #{deployment_name}
+      spec:
+        replicas: 1
+        template:
+          spec:
+            containers:
+              - name: #{app_name}
+                image: #{image}
+      """
+      File.write!(Path.join(depl_dir, "deploy.yml"), deploy_content)
 
-    Controller.delete(%{app_name: app_name, uid: uid})
+      # Write ingress.yml if not exists
+      ingress_path = Path.join(app_dir, "ingress.yml")
+      unless File.exists?(ingress_path) do
+        ingress_content = """
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: #{app_name}
+        spec:
+          rules:
+            - host: #{app_name}.local
+              http:
+                paths:
+                  - path: /#{uid}
+                    backend:
+                      service:
+                        name: #{deployment_name}
+                        port:
+                          number: 80
+        """
+        File.write!(ingress_path, ingress_content)
+      end
+    end
+
+    {:ok, %{deployment_name: deployment_name}}
   end
 end

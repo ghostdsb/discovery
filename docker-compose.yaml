@@ -1,41 +1,29 @@
 version: '3.8'
 
 services:
-  # 1. Discovery App
-  discovery:
-    build:
-      context: .
-      dockerfile: dev.Dockerfile
-    ports:
-      - "4000:4000"
+  # 1. Lightweight Kubernetes Cluster (Rancher k3s Control Plane)
+  k3s-server:
+    image: rancher/k3s:v1.24.4-k3s1
+    command: server --disable=traefik --tls-san=k3s-server --write-kubeconfig-mode=644
+    tmpfs:
+      - /run
+      - /var/run
+    privileged: true
     environment:
-      - MIX_ENV=dev
-      - PORT=4000
-      - GIT_ACCESS_TOKEN=local_dev_token
-      - GIT_REPO_URL=http://gitea:3000/discovery/gitops.git
-    depends_on:
-      - gitea
-    volumes:
-      - .:/app
-      - /tmp/discovery-k8s:/tmp/discovery-k8s
-
-  # 2. Gitea (Local Git Server for GitOps testing)
-  gitea:
-    image: gitea/gitea:1.15.6
-    environment:
-      - USER_UID=1000
-      - USER_GID=1000
+      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+      - K3S_KUBECONFIG_MODE=666
     ports:
-      - "3000:3000"
-      - "2222:22"
+      - "6443:6443"  # K8s API Port
+      - "8080:80"    # Ingress HTTP Port (mapped to 8080 on localhost)
     volumes:
-      - gitea_data:/data
+      - k3s-server-data:/var/lib/rancher/k3s
+      - ./data/k3s:/output
 
-  # 3. Redis (For idempotency persistence)
+  # 2. Redis (For local caching/metadata persistence)
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
 
 volumes:
-  gitea_data:
+  k3s-server-data:

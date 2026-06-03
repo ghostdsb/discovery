@@ -3,8 +3,8 @@
   "description": " ",
   "license": "MIT",
   "scripts": {
-    "deploy": "NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production webpack --mode production",
-    "watch": "NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production webpack --mode development --watch"
+    "deploy": "node -e 'process.exit(parseInt(process.version.slice(1)) >= 17 ? 0 : 1)' && NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production webpack --mode production || NODE_ENV=production webpack --mode production",
+    "watch": "node -e 'process.exit(parseInt(process.version.slice(1)) >= 17 ? 0 : 1)' && NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production webpack --mode development --watch || NODE_ENV=production webpack --mode development --watch"
   },
   "dependencies": {
     "phoenix": "file:../deps/phoenix",

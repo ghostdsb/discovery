@@ -13,19 +13,6 @@ defmodule DiscoveryWeb.BaseController do
     json(conn, %{apps: app_list})
   end
 
-  @list_app_deployments_params %{
-    app_name: [type: :string, required: true]
-  }
-  @spec list_app_deployments(any, map) :: Plug.Conn.t()
-  def list_app_deployments(conn, params) do
-    with {:ok, params} <- Tarams.cast(params, @list_app_deployments_params),
-         deployment_data <- DashboardQueries.get_deployment_data(params.app_name) do
-      json(conn, %{deployment_data: deployment_data})
-    else
-      {:error, _} -> json(put_status(conn, 400), "error")
-    end
-  end
-
   @create_app_params %{
     app_name: [type: :string, required: true]
   }
@@ -34,24 +21,6 @@ defmodule DiscoveryWeb.BaseController do
     with {:ok, params} <- Tarams.cast(params, @create_app_params),
          {:ok, :app_inserted} <- DashboardQueries.create_app(params.app_name) do
       json(conn, params)
-    else
-      {:error, reason} -> json(put_status(conn, 400), reason)
-    end
-  end
-
-  @deploy_build_params %{
-    app_name: [type: :string, required: true],
-    app_image: [type: :string, required: true],
-    config_map: [type: :map, required: true],
-    app_host: [type: :string, required: true],
-    app_target_port: [type: :integer, default: 4000],
-    app_container_port: [type: :integer, default: 4000]
-  }
-  @spec deploy_build(Plug.Conn.t(), map) :: Plug.Conn.t()
-  def deploy_build(conn, params) do
-    with {:ok, params} <- Tarams.cast(params, @deploy_build_params),
-         {:ok, response} <- DashboardQueries.create_deployment(params) do
-      json(conn, response)
     else
       {:error, reason} -> json(put_status(conn, 400), reason)
     end
@@ -68,33 +37,46 @@ defmodule DiscoveryWeb.BaseController do
     else
       {:error, _} ->
         json(put_status(conn, 400), "error")
-
-      {:error, reason, _} ->
-        json(put_status(conn, 400), "error: #{reason}")
     end
   end
 
-  @spec delete_deployment(Plug.Conn.t(), map) :: Plug.Conn.t()
-  def delete_deployment(conn, params) do
-    delete_deployment_params = %{
-      deployment_name: [type: :string, required: true, cast_func: &validate_depl_name/1]
-    }
+  @check_watcher_status_params %{
+    app_name: [type: :string, required: true]
+  }
+  @spec check_watcher_status(Plug.Conn.t(), map) :: Plug.Conn.t()
+  def check_watcher_status(conn, params) do
+    with {:ok, params} <- Tarams.cast(params, @check_watcher_status_params) do
+      app_name = params.app_name
+      tracked = :ets.member(Discovery.Utils.bridge_db(), app_name)
 
-    with {:ok, params} <- Tarams.cast(params, delete_deployment_params),
-         {:ok, _} <- DashboardQueries.delete_deployment(params.deployment_name) do
-      json(conn, params)
+      case :ets.lookup(Discovery.Utils.metadata_db(), app_name) do
+        [{^app_name, details}] ->
+          json(conn, %{
+            app_name: app_name,
+            tracked: tracked,
+            active: true,
+            details: %{
+              ip: details.ip,
+              port: details.port,
+              created_at: details.created_at,
+              version: details.version,
+              url: details.url,
+              image: details.image,
+              replicas: details.replicas,
+              last_updated: details.last_updated
+            }
+          })
+
+        _ ->
+          json(conn, %{
+            app_name: app_name,
+            tracked: tracked,
+            active: false,
+            details: nil
+          })
+      end
     else
-      {:error, _} -> json(put_status(conn, 400), "error")
-    end
-  end
-
-  defp validate_depl_name(deployment_name) do
-    case String.split(deployment_name, "-") do
-      parts when length(parts) >= 2 ->
-        {:ok, deployment_name}
-
-      _ ->
-        {:error, "validate deployment name: appname-uid"}
+      {:error, reason} -> json(put_status(conn, 400), reason)
     end
   end
 end

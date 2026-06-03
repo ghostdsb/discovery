@@ -4,6 +4,33 @@
 # remember to add this file to your .gitignore.
 import Config
 
+connection_method =
+  System.get_env("CONNECTION_METHOD")
+  |> case do
+    "stub" -> :stub
+    "service_account" -> :service_account
+    "kube_config" -> :kube_config
+    _ -> nil
+  end
+
+if connection_method do
+  config :discovery, connection_method: connection_method
+end
+
+if System.get_env("API_TOKEN") do
+  config :discovery, api_token: System.get_env("API_TOKEN")
+end
+
+if System.get_env("BASE_URL") do
+  config :discovery, base_url: System.get_env("BASE_URL")
+end
+
+if System.get_env("PORT") do
+  config :discovery, DiscoveryWeb.Endpoint,
+    http: [port: String.to_integer(System.get_env("PORT"))],
+    server: true
+end
+
 if config_env() == :prod do
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
@@ -28,22 +55,10 @@ if config_env() == :prod do
   #
   # Then you can assemble a release by calling `mix release`.
   # See `mix help release` for more information.
-  aws_access_id = System.fetch_env!("AWS_ACCESS_KEY_ID")
-  aws_access_key = System.fetch_env!("AWS_SECRET_ACCESS_KEY")
-  discovery_bucket = System.fetch_env!("DISCOVERY_BUCKET")
-  discovery_bucket_url = System.fetch_env!("DISCOVERY_BUCKET_URL")
-  git_access_token = System.fetch_env!("GITHUB_REPO_TOKEN")
   api_token = System.get_env("API_TOKEN") || "discovery-secret-token"
   base_url = System.get_env("BASE_URL") || "https://discovery.example.com"
 
-  config :ex_aws,
-    access_key_id: aws_access_id,
-    secret_access_key: aws_access_key
-
   config :discovery,
-    discovery_bucket: discovery_bucket,
-    discovery_bucket_url: discovery_bucket_url,
-    git_access_token: git_access_token,
     api_token: api_token,
     base_url: base_url
 end

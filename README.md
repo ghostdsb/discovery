@@ -4,7 +4,7 @@
 
 **Platform for hosting realtime, stateful servers with zero downtime deployment and horizontal scaling on Kubernetes**
 
-![Discovery CI-CD](https://github.com/spawnfest/Discovery/actions/workflows/discovery.yml/badge.svg)
+![Discovery CI-CD](https://github.com/ghostdsb/Discovery/actions/workflows/discovery.yml/badge.svg)
 
 ## Table of Contents
 
@@ -15,6 +15,8 @@
     - [Prerequisites](#prerequisites)
     - [Setup Tips](#setup-tips)
     - [Kubernetes Connection Modes & Local k3d Setup](docs/kubernetes-connection-modes.md)
+    - [Testing with Local k3d Cluster (Live Cluster Mode)](docs/local-k3d-testing.md)
+    - [Testing with Local K8s in Docker Compose (Live Cluster Mode)](docs/local-k3s-compose.md)
     - [Running Discovery server](#running-discovery-server)
     - [Using dashboard](#using-dashboard)
 5. [Demo time](#demo-time)
@@ -158,6 +160,8 @@ The dashboard is called **Bridge**
 ## CI/CD & GitOps (Jenkins Alternative)
 
 Discovery can act as a lightweight, GitOps-centric CD controller. You can trigger deployments via a simple API call from your CI pipeline (GitHub Actions, GitLab CI, etc.).
+
+For a comprehensive, production-ready step-by-step example with an interactive sequence flow diagram, detailed instructions on secure **Secret Management** (ensuring no database or API credentials ever leak into your CI pipelines or logs), and template customizations, please see the **[End-to-End CI/CD & Secret Management Guide](docs/end-to-end-cicd-and-secrets.md)**.
 
 ### Deploying via CI API
 

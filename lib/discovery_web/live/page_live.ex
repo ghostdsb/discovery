@@ -1,8 +1,9 @@
 defmodule DiscoveryWeb.PageLive do
   @moduledoc false
   use DiscoveryWeb, :live_view
+
   alias Discovery.Dashboard.Queries, as: DashboardQueries
-  alias Discovery.Deploy.Utils, as: DeployUtils
+
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
@@ -51,7 +52,7 @@ defmodule DiscoveryWeb.PageLive do
   @impl true
   def handle_event("create-deployment", %{"app-image" => app_image} = _params, socket) do
     if socket.assigns.modal_input? do
-      %DeployUtils{
+      %{
         app_name: socket.assigns.selected_app,
         app_image: app_image
       }
@@ -176,7 +177,7 @@ defmodule DiscoveryWeb.PageLive do
     Process.send_after(
       self(),
       {"deployment-created", %{status: deployment_status, app_name: app_name}},
-      2000
+      1000
     )
   end
 end

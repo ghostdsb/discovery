@@ -1,15 +1,14 @@
 defmodule Discovery.K8s.DeploymentController do
   @moduledoc """
-  Controller manager handles communications between FE(Bridge) and BE(Deployment Manager & Engine)
+  Controller manager handles communications between the LiveView dashboard (Bridge) and the ETS databases.
   """
-
   use GenServer
 
-  alias Discovery.Deploy.Utils, as: DeployUtils
   alias Discovery.Utils
 
   ### CLIENT FUNCTIONS ###
-  @spec start_link(any()) :: :ignore | {:error, any} | {:ok, pid}
+
+  @spec start_link(any()) :: :ignore | {:error, any()} | {:ok, pid()}
   def start_link(_opts) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
@@ -31,6 +30,7 @@ defmodule Discovery.K8s.DeploymentController do
   end
 
   ### SERVER CALLBACKS ###
+
   def init(_args) do
     Process.send_after(self(), "populate_bridgedb", 5_000)
     {:ok, %{}}
@@ -47,9 +47,8 @@ defmodule Discovery.K8s.DeploymentController do
   end
 
   def handle_call({"delete_app", app_name}, _from, state) do
-    deleted_resources = DeployUtils.delete_app(app_name)
     delete_app_from_ets(app_name)
-    {:reply, deleted_resources, state}
+    {:reply, {:ok, :app_deleted}, state}
   end
 
   def handle_call("get_apps", _from, state) do
@@ -67,10 +66,24 @@ defmodule Discovery.K8s.DeploymentController do
   end
 
   ### HELPER FUNCTIONS ###
+
   defp lookup_deployments(app_name) do
     case :ets.lookup(Utils.metadata_db(), app_name) do
-      [] -> %{}
-      [{_app_name, deployment_map}] -> deployment_map
+      [] ->
+        %{}
+
+      [{_app_name, details}] ->
+        # Format the pod metadata as a Map of deployment objects matching what the LiveView expects
+        name = "#{app_name}-#{details.version}"
+
+        %{
+          name => %{
+            "url" => details.url,
+            "image" => details.image,
+            "last_updated" => details.last_updated,
+            "replicas" => details.replicas
+          }
+        }
     end
   end
 

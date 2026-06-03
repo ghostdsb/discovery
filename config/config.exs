@@ -23,43 +23,15 @@ config :logger, :console,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-config :discovery, Discovery.Scheduler,
-  jobs: [
-    # Runs every midnight IST:
-    {"30 5 * * *", {Discovery.Engine.Cleaner, :execute, []}}
-  ]
-
 config :discovery,
   # Connection method to use for communicating with Kubernetes:
   #   - :stub            => Local Sandbox Mode (Offline). Mock connection requiring zero Kubernetes
-  #                         infrastructure. Loads and writes files to the local "data/discovery/" folder
-  #                         and dynamically parses ingress.yml configurations to support development.
+  #                         infrastructure. Loads and writes files to the local "data/discovery/" folder.
   #   - :service_account => In-Cluster Mode. Uses standard service account tokens inside a live K8s pod.
-  #   - :kube_config     => Local Cluster Mode. Loads cluster context from the local "~/.kube/config" file
-  #                         to connect to a running local cluster (e.g. k3d, minikube, kind) or remote cloud cluster.
+  #   - :kube_config     => Local Cluster Mode. Loads cluster context from the local "~/.kube/config" file.
   connection_method: :service_account,
-  namespace: "discovery",
-  resources: %{
-    limits: %{cpu: "500m", memory: "500Mi"},
-    requests: %{cpu: "100m", memory: "300Mi"}
-  },
-  use_service_account: true,
-  service_account: "discovery-sa",
-  use_external_ingress_class: true,
-  ingress_class: "nginx-external",
-  image_pull_secrets: "dockerhub-auth-discovery",
-  kubernetes_arch: "amd64"
-
-config :discovery, :api_version,
-  config_map: "v1",
-  deployment: "apps/v1",
-  ingress: "networking.k8s.io/v1",
-  namespace: "v1",
-  service: "v1"
-
-config :discovery,
-  git_username: "ghostdsb",
-  api_token: System.get_env("API_TOKEN") || "discovery-secret-token"
+  api_token: System.get_env("API_TOKEN") || "discovery-secret-token",
+  base_url: System.get_env("BASE_URL") || "http://localhost:4000"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
